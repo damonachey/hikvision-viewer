@@ -53,10 +53,10 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 
 - **Cameras** lets you tick which cameras to show. Hidden cameras aren't requested from the NVR, and new cameras appear by default.
 - **Refresh** gets new snapshots from every shown camera.
-- **Auto refresh** repeats that every 1, 5, 30 or 60 seconds. A refresh is skipped if the last one is still loading, the tab is in the background or a full-size view is open.
-- Setting **Auto refresh** to **Live** plays every shown camera's sub-stream in its tile and disables **Refresh**. Sub-streams are low resolution. The video stops while the tab is in the background.
-- Click a tile to open that camera full size. The tiles pause while it's open, and it starts with the page's **Auto refresh** setting.
-- The full-size view has its own **Refresh** list. It only applies while the view is open, doesn't change the page's setting and isn't saved.
+- The list next to **Cameras** sets the auto refresh, which repeats that every 1, 5, 30 or 60 seconds. A refresh is skipped if the last one is still loading, the tab is in the background or a full-size view is open.
+- Setting that list to **Live** plays every shown camera's sub-stream in its tile and disables **Refresh**. Sub-streams are low resolution. The video stops while the tab is in the background.
+- Click a tile to open that camera full size. The tiles pause while it's open, and it starts with the page's auto refresh setting.
+- The full-size view has its own refresh list. It only applies while the view is open, doesn't change the page's setting and isn't saved.
 - In the full-size view, **Live** plays the camera's main stream, without audio, and stops when you close the view or switch tabs. The other settings show snapshots at the highest resolution the NVR offers. The NVR may limit those below the camera's resolution, such as 1920×1080 on a DS-7608N-E2/8P, so use **Live** for the full resolution.
 - Each browser remembers its own camera and auto refresh choices, and clearing its site data resets them.
 

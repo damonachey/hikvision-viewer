@@ -14,7 +14,7 @@
     label { color: var(--muted); font-size: 13px; }
     button, select { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
     button:disabled { opacity: .6; cursor: default; }
-    select { margin-left: 6px; padding: 8px; }
+    select { padding: 8px; }
     summary { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); cursor: pointer; list-style: none; }
     summary::-webkit-details-marker { display: none; }
     #camera-list { position: absolute; top: 100%; right: 0; z-index: 1; width: 240px; max-width: 100%; max-height: 60vh; margin-top: 4px; padding: 6px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
@@ -41,16 +41,14 @@
 <body>
   <header>
     <h1>Cameras</h1>
-    <label>Auto refresh
-      <select id="interval">
-        <option value="live">Live</option>
-        <option value="1">1 second</option>
-        <option value="5">5 seconds</option>
-        <option value="30">30 seconds</option>
-        <option value="60">60 seconds</option>
-        <option value="0" selected>Off</option>
-      </select>
-    </label>
+    <select id="interval" aria-label="Auto refresh">
+      <option value="live">Live</option>
+      <option value="1">1 second</option>
+      <option value="5">5 seconds</option>
+      <option value="30">30 seconds</option>
+      <option value="60">60 seconds</option>
+      <option value="0" selected>Off</option>
+    </select>
     <details id="camera-menu">
       <summary>Cameras</summary>
       <div id="camera-list"></div>
@@ -72,16 +70,14 @@
   <dialog id="full-view">
     <div class="full-header">
       <span id="full-name" class="name"></span>
-      <label>Refresh
-        <select id="full-interval" autocomplete="off">
-          <option value="live">Live</option>
-          <option value="1">1 second</option>
-          <option value="5">5 seconds</option>
-          <option value="30">30 seconds</option>
-          <option value="60">60 seconds</option>
-          <option value="0" selected>Off</option>
-        </select>
-      </label>
+      <select id="full-interval" aria-label="Refresh" autocomplete="off">
+        <option value="live">Live</option>
+        <option value="1">1 second</option>
+        <option value="5">5 seconds</option>
+        <option value="30">30 seconds</option>
+        <option value="60">60 seconds</option>
+        <option value="0" selected>Off</option>
+      </select>
       <button id="full-close" type="button">Close</button>
     </div>
     <div id="full-frame" class="frame"></div>
