@@ -7,10 +7,10 @@
   <style>
     :root { color-scheme: dark; --bg: #111418; --card: #1b2026; --line: #2c333b; --text: #e8ebee; --muted: #98a2ad; --bad: #ff8a80; }
     * { box-sizing: border-box; }
-    body { margin: 0; padding: 16px; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; min-height: 100vh; margin: 0; padding: 16px; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
     header { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
-    h1 { margin: 0; font-size: 20px; }
-    #status { flex: 1; color: var(--muted); font-size: 13px; }
+    h1 { margin: 0 auto 0 0; font-size: 20px; }
+    #status { margin-top: 16px; color: var(--muted); font-size: 13px; }
     label { color: var(--muted); font-size: 13px; }
     button, select { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
     button:disabled { opacity: .6; cursor: default; }
@@ -21,7 +21,7 @@
     #camera-list label { display: flex; align-items: center; gap: 8px; padding: 6px; color: var(--text); font-size: 14px; cursor: pointer; }
     #camera-list .offline { margin-left: auto; color: var(--muted); font-size: 12px; }
     #error { margin-bottom: 16px; color: var(--bad); }
-    #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+    #grid { flex: 1; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); align-content: start; gap: 12px; }
     .camera { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
     .link { display: block; color: inherit; text-decoration: none; }
     .frame { display: flex; align-items: center; justify-content: center; aspect-ratio: 16 / 9; background: #000; color: var(--muted); font-size: 13px; text-align: center; }
@@ -40,7 +40,6 @@
 <body>
   <header>
     <h1>Cameras</h1>
-    <span id="status"></span>
     <label>Auto refresh
       <select id="interval">
         <option value="0">Off</option>
@@ -58,6 +57,7 @@
   </header>
   <div id="error" hidden></div>
   <main id="grid"></main>
+  <footer id="status"></footer>
   <template id="camera-template">
     <article class="camera">
       <a class="link" href="#" target="_blank" rel="noopener"><div class="frame"></div></a>
@@ -98,6 +98,8 @@
     const KEEP_BEHIND_SECONDS = 30;
     const hiddenCameras = readHiddenCameras();
     let cameras = [];
+    let refreshing = false;
+    let refreshQueued = false;
     let autoRefreshTimer;
     let fullCamera = null;
     let fullStream = null;
@@ -130,7 +132,7 @@
       camera.card.hidden = !shown;
       if (!shown) return updateStatus();
       loadSnapshot(camera, camera.card).then(() => {
-        if (!refreshButton.disabled) updateStatus();
+        if (!refreshing) updateStatus();
       });
     }
 
@@ -175,12 +177,32 @@
       });
     }
 
-    async function refreshSnapshots() {
-      refreshButton.disabled = true;
-      statusText.textContent = 'Loading snapshots…';
+    // Automatic refreshes pass quiet, so the status only changes when you ask for a refresh.
+    async function refreshSnapshots({ quiet = false } = {}) {
+      refreshing = true;
+      if (!quiet) statusText.textContent = 'Loading snapshots…';
       await Promise.all(shownCameras().map((camera) => loadSnapshot(camera, camera.card)));
-      updateStatus();
-      refreshButton.disabled = false;
+      if (!quiet && !refreshQueued) updateStatus();
+      finishRefresh();
+    }
+
+    function finishRefresh() {
+      refreshing = false;
+      if (refreshQueued) {
+        refreshQueued = false;
+        refresh();
+      } else {
+        refreshButton.disabled = false;
+      }
+    }
+
+    // Only one refresh runs at a time, so a click during an automatic one runs straight
+    // after it. The button stays disabled until the refresh it asked for has finished.
+    function requestRefresh() {
+      refreshButton.disabled = true;
+      if (!refreshing) return refresh();
+      refreshQueued = true;
+      statusText.textContent = 'Loading snapshots…';
     }
 
     // Plays one camera's main stream in a frame and reconnects until stop() is called.
@@ -316,7 +338,7 @@
     }
 
     async function loadCameras() {
-      refreshButton.disabled = true;
+      refreshing = true;
       errorBox.hidden = true;
       statusText.textContent = 'Finding cameras…';
       try {
@@ -328,7 +350,7 @@
         errorBox.textContent = err.message;
         errorBox.hidden = false;
         statusText.textContent = '';
-        refreshButton.disabled = false;
+        finishRefresh();
         return;
       }
 
@@ -365,7 +387,9 @@
       autoRefreshTimer = setInterval(() => {
         // Skip a cycle while the last one is loading, nobody is watching, or live video
         // is open, to spare the NVR.
-        if (!refreshButton.disabled && !document.hidden && !fullCamera) refresh();
+        if (refreshing || document.hidden || fullCamera) return;
+        if (cameras.length) refreshSnapshots({ quiet: true });
+        else loadCameras();
       }, seconds * 1000);
     }
 
@@ -375,7 +399,7 @@
     document.addEventListener('visibilitychange', () => {
       if (fullCamera) startFullStream();
     });
-    refreshButton.addEventListener('click', refresh);
+    refreshButton.addEventListener('click', requestRefresh);
     intervalSelect.addEventListener('change', () => {
       try { localStorage.setItem(INTERVAL_KEY, intervalSelect.value); } catch {}
       startAutoRefresh();
@@ -388,7 +412,7 @@
       fullStream?.stop();
       fullStream = null;
       fullCamera = null;
-      if (!refreshButton.disabled) refresh();
+      if (!refreshing) refreshSnapshots({ quiet: true });
     });
 
     try { intervalSelect.value = localStorage.getItem(INTERVAL_KEY) ?? '0'; } catch {}
