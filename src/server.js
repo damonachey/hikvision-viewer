@@ -26,7 +26,7 @@ function sendJson(res, status, data) {
 }
 
 async function handle(req, res) {
-  const { pathname } = new URL(req.url, 'http://localhost');
+  const { pathname, searchParams } = new URL(req.url, 'http://localhost');
 
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
 
@@ -41,7 +41,7 @@ async function handle(req, res) {
 
   const snapshotRoute = pathname.match(/^\/api\/cameras\/(\d+)\/snapshot$/);
   if (snapshotRoute) {
-    const { contentType, body } = await nvr.snapshot(snapshotRoute[1]);
+    const { contentType, body } = await nvr.snapshot(snapshotRoute[1], { full: searchParams.get('full') === '1' });
     res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'no-store' });
     return res.end(body);
   }

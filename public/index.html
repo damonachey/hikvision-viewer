@@ -159,7 +159,7 @@
         image.onload = () => {
           frame.className = 'frame';
           frame.replaceChildren(image);
-          card.querySelector('.link').href = url;
+          card.querySelector('.link').href = `${url}&full=1`;
           card.querySelector('.time').textContent = new Date().toLocaleTimeString();
           camera.loaded = true;
           resolve();

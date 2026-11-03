@@ -179,9 +179,17 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
       });
     },
 
-    async snapshot(cameraId) {
+    async snapshot(cameraId, { full = false } = {}) {
       // ISAPI stream ids are the channel followed by 01 for the main stream.
-      const res = await withSlot(() => authedGet(`/ISAPI/Streaming/channels/${cameraId}01/picture`));
+      const stream = `/ISAPI/Streaming/channels/${cameraId}01`;
+      let query = '';
+      if (full) {
+        // Without a size the NVR sends 704x576. It may still send less than the size
+        // requested: a DS-7608N-E2/8P returns 1920x1080 for a 2560x1440 camera.
+        const settings = (await withSlot(() => authedGet(stream))).body.toString();
+        query = `?videoResolutionWidth=${xmlValue(settings, 'videoResolutionWidth')}&videoResolutionHeight=${xmlValue(settings, 'videoResolutionHeight')}`;
+      }
+      const res = await withSlot(() => authedGet(`${stream}/picture${query}`));
       const contentType = res.headers['content-type'] ?? '';
       if (!contentType.startsWith('image/')) {
         throw new NvrError(`The NVR did not return an image for camera ${cameraId}`);

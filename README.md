@@ -56,7 +56,7 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 - **Auto refresh** repeats that every 1, 5, 30 or 60 seconds. A refresh is skipped if the last one is still loading, the tab is in the background or a live view is open.
 - **Live** on a tile opens that camera's main stream full size. Video stops when you close it or switch tabs. It has no audio, and it can take several seconds to start.
 - Each browser remembers its own camera and auto refresh choices, and clearing its site data resets them.
-- Click an image to open it full size in a new tab.
+- Click an image to open a new snapshot at the highest resolution the NVR offers in a new tab. Tiles use a smaller image to keep refreshes light. The NVR may limit snapshots below the camera's resolution, such as 1920×1080 on a DS-7608N-E2/8P, but **Live** still shows the full main stream.
 
 ## Security
 
@@ -83,7 +83,7 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 | Endpoint | Returns |
 |---|---|
 | `GET /api/cameras` | JSON list of the cameras, each with `id`, `name` and `online` |
-| `GET /api/cameras/:id/snapshot` | The camera's current main-stream image |
+| `GET /api/cameras/:id/snapshot` | The camera's current image at the NVR's default size. Add `?full=1` for the highest resolution the NVR offers. |
 | WebSocket `/api/cameras/:id/live` | The camera's main stream as fragmented MP4, after a JSON message with its codec. Only same-origin pages can connect, and the server allows 2 streams at once. |
 
 ## Project layout
