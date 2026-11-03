@@ -51,9 +51,9 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 
 ## Using the page
 
-- **Cameras** lets you tick which cameras to show. Hidden cameras aren't requested from the NVR, and new cameras appear by default.
+- The gear button lets you tick which cameras to show. Hidden cameras aren't requested from the NVR, and new cameras appear by default.
 - **Refresh** gets new snapshots from every shown camera.
-- The list next to **Cameras** sets the auto refresh, which repeats that every 1, 5, 30 or 60 seconds. A refresh is skipped if the last one is still loading, the tab is in the background or a full-size view is open.
+- The list next to **Refresh** sets the auto refresh, which repeats that every 1, 5, 30 or 60 seconds. A refresh is skipped if the last one is still loading, the tab is in the background or a full-size view is open.
 - Setting that list to **Live** plays every shown camera's sub-stream in its tile and disables **Refresh**. Sub-streams are low resolution. The video stops while the tab is in the background.
 - Click a tile to open that camera full size. The tiles pause while it's open, and it starts with the page's auto refresh setting.
 - The full-size view has its own refresh list. It only applies while the view is open, doesn't change the page's setting and isn't saved.
@@ -74,7 +74,7 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 | `EADDRINUSE` when starting | Another app is using that port, so change `PORT` |
 | "The NVR rejected the username or password" | Fix `.env` and restart. The NVR may also have locked the account, so wait for the lock to clear first. |
 | "Could not reach the NVR" | Check `NVR_URL` and that this machine can reach the NVR |
-| Cameras are missing | Check the **Cameras** menu. Only IP camera channels are listed, so analog channels on a hybrid recorder won't appear. |
+| Cameras are missing | Check the list under the gear button. Only IP camera channels are listed, so analog channels on a hybrid recorder won't appear. |
 | "Camera offline" or "Snapshot failed" | Check the camera's status on the NVR and that the account is allowed to view it |
 | "FFmpeg is not installed on the server" | Install FFmpeg, make sure it's on your `PATH`, and restart the app |
 | Live view stays on "Reconnecting…" | Check that RTSP is enabled on the NVR, that `NVR_RTSP_PORT` is right, and that your firewall allows UDP video to reach FFmpeg. The server log has the reason. |

@@ -15,7 +15,7 @@
     button, select { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
     button:disabled { opacity: .6; cursor: default; }
     select { padding: 8px; }
-    summary { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); cursor: pointer; list-style: none; }
+    summary { display: flex; align-items: center; justify-content: center; width: 39px; height: 39px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); cursor: pointer; list-style: none; }
     summary::-webkit-details-marker { display: none; }
     #camera-list { position: absolute; top: 100%; right: 0; z-index: 1; width: 240px; max-width: 100%; max-height: 60vh; margin-top: 4px; padding: 6px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
     #camera-list label { display: flex; align-items: center; gap: 8px; padding: 6px; color: var(--text); font-size: 14px; cursor: pointer; }
@@ -49,11 +49,16 @@
       <option value="60">60 seconds</option>
       <option value="0" selected>Off</option>
     </select>
+    <button id="refresh" type="button">Refresh</button>
     <details id="camera-menu">
-      <summary>Cameras</summary>
+      <summary aria-label="Choose cameras" title="Choose cameras">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </summary>
       <div id="camera-list"></div>
     </details>
-    <button id="refresh" type="button">Refresh</button>
   </header>
   <div id="error" hidden></div>
   <main id="grid"></main>
