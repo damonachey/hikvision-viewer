@@ -2,8 +2,10 @@ import { spawn } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 import { CREDENTIALS_MESSAGE } from './nvr.js';
 
-// The page shows one camera at a time. Two leaves room for a second tab or a reconnect while the old stream shuts down.
-const MAX_STREAMS = 2;
+const STREAM_SUFFIXES = { main: '01', sub: '02' };
+// Enough for all 8 channels twice, which leaves room for a second tab or for
+// reconnects while the old streams shut down.
+const MAX_STREAMS = 16;
 const STALL_TIMEOUT_MS = 20_000;
 const MAX_CLIENT_BACKLOG_BYTES = 32 * 1024 * 1024;
 
@@ -69,8 +71,8 @@ function failStream(socket, message, { fatal = false } = {}) {
   socket.close(fatal ? 1008 : 1011);
 }
 
-function streamCamera(socket, nvr, cameraId, activeStreams) {
-  const ffmpeg = spawn('ffmpeg', ffmpegArgs(nvr.rtspUrl(cameraId)), {
+function streamCamera(socket, nvr, cameraId, streamSuffix, activeStreams) {
+  const ffmpeg = spawn('ffmpeg', ffmpegArgs(nvr.rtspUrl(cameraId, streamSuffix)), {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -146,10 +148,11 @@ export function attachLiveStreams(server, nvr) {
   const activeStreams = new Set();
 
   server.on('upgrade', (req, socket, head) => {
-    const { pathname } = new URL(req.url, 'http://localhost');
+    const { pathname, searchParams } = new URL(req.url, 'http://localhost');
     const route = pathname.match(/^\/api\/cameras\/(\d+)\/live$/);
+    const streamSuffix = STREAM_SUFFIXES[searchParams.get('stream')];
 
-    if (!route || !isSameOrigin(req)) {
+    if (!route || !streamSuffix || !isSameOrigin(req)) {
       socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
       return;
     }
@@ -157,7 +160,7 @@ export function attachLiveStreams(server, nvr) {
     wss.handleUpgrade(req, socket, head, (client) => {
       if (nvr.credentialsRejected()) return failStream(client, CREDENTIALS_MESSAGE, { fatal: true });
       if (activeStreams.size >= MAX_STREAMS) return failStream(client, 'Too many live streams are open');
-      streamCamera(client, nvr, route[1], activeStreams);
+      streamCamera(client, nvr, route[1], streamSuffix, activeStreams);
     });
   });
 }

@@ -1,6 +1,6 @@
 # Hikvision Camera Viewer
 
-A small local web app that shows snapshots from the cameras on a Hikvision NVR, with live video from one camera at a time.
+A small local web app that shows snapshots from the cameras on a Hikvision NVR, with live video in the tiles or full size.
 
 A Node server logs in to the NVR and passes the images and video to a single web page, so your NVR credentials never reach the browser. Snapshots use the NVR's ISAPI interface, and live video uses RTSP through FFmpeg.
 
@@ -53,10 +53,12 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 
 - **Cameras** lets you tick which cameras to show. Hidden cameras aren't requested from the NVR, and new cameras appear by default.
 - **Refresh** gets new snapshots from every shown camera.
-- **Auto refresh** repeats that every 1, 5, 30 or 60 seconds. A refresh is skipped if the last one is still loading, the tab is in the background or a live view is open.
-- **Live** on a tile opens that camera's main stream full size. Video stops when you close it or switch tabs. It has no audio, and it can take several seconds to start.
+- **Auto refresh** repeats that every 1, 5, 30 or 60 seconds. A refresh is skipped if the last one is still loading, the tab is in the background or a full-size view is open.
+- Setting **Auto refresh** to **Live** plays every shown camera's sub-stream in its tile and disables **Refresh**. Sub-streams are low resolution. The video stops while the tab is in the background.
+- Click a tile to open that camera full size. The tiles pause while it's open, and it starts with the page's **Auto refresh** setting.
+- The full-size view has its own **Refresh** list. It only applies while the view is open, doesn't change the page's setting and isn't saved.
+- In the full-size view, **Live** plays the camera's main stream, without audio, and stops when you close the view or switch tabs. The other settings show snapshots at the highest resolution the NVR offers. The NVR may limit those below the camera's resolution, such as 1920×1080 on a DS-7608N-E2/8P, so use **Live** for the full resolution.
 - Each browser remembers its own camera and auto refresh choices, and clearing its site data resets them.
-- Click an image to open a new snapshot at the highest resolution the NVR offers in a new tab. Tiles use a smaller image to keep refreshes light. The NVR may limit snapshots below the camera's resolution, such as 1920×1080 on a DS-7608N-E2/8P, but **Live** still shows the full main stream.
 
 ## Security
 
@@ -84,7 +86,7 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 |---|---|
 | `GET /api/cameras` | JSON list of the cameras, each with `id`, `name` and `online` |
 | `GET /api/cameras/:id/snapshot` | The camera's current image at the NVR's default size. Add `?full=1` for the highest resolution the NVR offers. |
-| WebSocket `/api/cameras/:id/live` | The camera's main stream as fragmented MP4, after a JSON message with its codec. Only same-origin pages can connect, and the server allows 2 streams at once. |
+| WebSocket `/api/cameras/:id/live?stream=main` or `sub` | The camera's stream as fragmented MP4, after a JSON message with its codec. Only same-origin pages can connect, and the server allows 16 streams at once. |
 
 ## Project layout
 

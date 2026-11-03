@@ -155,9 +155,9 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
       credentialsRejected = true;
     },
 
-    rtspUrl(cameraId) {
+    rtspUrl(cameraId, streamSuffix) {
       const login = `${encodeURIComponent(user)}:${encodeURIComponent(password)}`;
-      return `rtsp://${login}@${base.hostname}:${rtspPort}/Streaming/Channels/${cameraId}01`;
+      return `rtsp://${login}@${base.hostname}:${rtspPort}/Streaming/Channels/${cameraId}${streamSuffix}`;
     },
 
     async listCameras() {

@@ -23,17 +23,18 @@
     #error { margin-bottom: 16px; color: var(--bad); }
     #grid { flex: 1; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); align-content: start; gap: 12px; }
     .camera { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
-    .link { display: block; color: inherit; text-decoration: none; }
+    .link { display: block; width: 100%; padding: 0; border: 0; border-radius: 0; background: none; }
+    .link:disabled { opacity: 1; }
     .frame { display: flex; align-items: center; justify-content: center; aspect-ratio: 16 / 9; background: #000; color: var(--muted); font-size: 13px; text-align: center; }
     .frame img, .frame video { display: block; width: 100%; height: 100%; object-fit: contain; }
     .frame.failed { color: var(--bad); }
     .caption { display: flex; align-items: center; gap: 8px; padding: 8px 10px; }
     .name { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
     .time { flex: none; margin-left: auto; color: var(--muted); font-size: 13px; }
-    .live-button { flex: none; padding: 3px 10px; font-size: 13px; }
     #full-view { width: min(1600px, calc(100vw - 32px)); max-width: none; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
     #full-view::backdrop { background: rgba(0, 0, 0, .8); }
-    .full-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; }
+    .full-header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 10px; }
+    .full-header .name { margin-right: auto; }
     #full-frame { width: 100%; height: auto; max-height: calc(100vh - 110px); }
   </style>
 </head>
@@ -42,11 +43,12 @@
     <h1>Cameras</h1>
     <label>Auto refresh
       <select id="interval">
-        <option value="0">Off</option>
+        <option value="live">Live</option>
         <option value="1">1 second</option>
         <option value="5">5 seconds</option>
         <option value="30">30 seconds</option>
         <option value="60">60 seconds</option>
+        <option value="0" selected>Off</option>
       </select>
     </label>
     <details id="camera-menu">
@@ -60,17 +62,26 @@
   <footer id="status"></footer>
   <template id="camera-template">
     <article class="camera">
-      <a class="link" href="#" target="_blank" rel="noopener"><div class="frame"></div></a>
+      <button class="link" type="button"><div class="frame"></div></button>
       <div class="caption">
         <span class="name"></span>
         <span class="time"></span>
-        <button class="live-button" type="button">Live</button>
       </div>
     </article>
   </template>
   <dialog id="full-view">
     <div class="full-header">
       <span id="full-name" class="name"></span>
+      <label>Refresh
+        <select id="full-interval" autocomplete="off">
+          <option value="live">Live</option>
+          <option value="1">1 second</option>
+          <option value="5">5 seconds</option>
+          <option value="30">30 seconds</option>
+          <option value="60">60 seconds</option>
+          <option value="0" selected>Off</option>
+        </select>
+      </label>
       <button id="full-close" type="button">Close</button>
     </div>
     <div id="full-frame" class="frame"></div>
@@ -87,6 +98,7 @@
     const cameraList = document.getElementById('camera-list');
     const fullView = document.getElementById('full-view');
     const fullFrame = document.getElementById('full-frame');
+    const fullInterval = document.getElementById('full-interval');
     const INTERVAL_KEY = 'autoRefreshSeconds';
     const HIDDEN_KEY = 'hiddenCameras';
     const MIN_RETRY_MS = 1000;
@@ -97,12 +109,16 @@
     // far apart, so keep plenty or the frames being played could be removed too.
     const KEEP_BEHIND_SECONDS = 30;
     const hiddenCameras = readHiddenCameras();
+    const gridStreams = new Map();
     let cameras = [];
     let refreshing = false;
     let refreshQueued = false;
     let autoRefreshTimer;
     let fullCamera = null;
     let fullStream = null;
+    let fullTimer;
+    let fullLoadId = 0;
+    let fullLoading = false;
 
     // Saves the hidden cameras rather than the shown ones, so new cameras appear by default.
     function readHiddenCameras() {
@@ -118,10 +134,16 @@
       return cameras.filter((camera) => !hiddenCameras.has(camera.id));
     }
 
+    function isLive() {
+      return intervalSelect.value === 'live';
+    }
+
     function updateStatus() {
       const shown = shownCameras();
       const loaded = shown.filter((camera) => camera.loaded).length;
-      statusText.textContent = shown.length ? `${loaded} of ${shown.length} snapshots loaded` : 'No cameras selected';
+      if (!shown.length) statusText.textContent = 'No cameras selected';
+      else if (isLive()) statusText.textContent = `Live view of ${shown.length} cameras`;
+      else statusText.textContent = `${loaded} of ${shown.length} snapshots loaded`;
     }
 
     function setCameraShown(camera, shown) {
@@ -130,6 +152,11 @@
       try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hiddenCameras])); } catch {}
 
       camera.card.hidden = !shown;
+      if (isLive()) {
+        if (shown) startGridStream(camera);
+        else stopGridStream(camera);
+        return updateStatus();
+      }
       if (!shown) return updateStatus();
       loadSnapshot(camera, camera.card).then(() => {
         if (!refreshing) updateStatus();
@@ -159,14 +186,16 @@
         const image = new Image();
         image.alt = camera.name;
         image.onload = () => {
+          // The tiles may have switched to live video while this was loading.
+          if (isLive()) return resolve();
           frame.className = 'frame';
           frame.replaceChildren(image);
-          card.querySelector('.link').href = `${url}&full=1`;
           card.querySelector('.time').textContent = new Date().toLocaleTimeString();
           camera.loaded = true;
           resolve();
         };
         image.onerror = () => {
+          if (isLive()) return resolve();
           frame.className = 'frame failed';
           frame.textContent = camera.online === false ? 'Camera offline' : 'Snapshot failed';
           card.querySelector('.time').textContent = '';
@@ -192,7 +221,8 @@
         refreshQueued = false;
         refresh();
       } else {
-        refreshButton.disabled = false;
+        // If the cameras never loaded, Refresh stays available to try again.
+        refreshButton.disabled = isLive() && cameras.length > 0;
       }
     }
 
@@ -205,8 +235,8 @@
       statusText.textContent = 'Loading snapshots…';
     }
 
-    // Plays one camera's main stream in a frame and reconnects until stop() is called.
-    function startStream(camera, frame) {
+    // Plays one camera's stream in a frame and reconnects until stop() is called.
+    function startStream(camera, frame, { quality, onPlayingChange = () => {} }) {
       const waitingText = camera.online === false ? 'Camera offline' : 'Reconnecting…';
       let socket, video, sourceBuffer, retryTimer;
       let queue = [];
@@ -225,6 +255,7 @@
 
       function showMessage(text, failed = false) {
         clearVideo();
+        onPlayingChange(false);
         frame.className = failed ? 'frame failed' : 'frame';
         frame.textContent = text;
       }
@@ -269,7 +300,9 @@
         video.setAttribute('aria-label', camera.name);
         video.src = URL.createObjectURL(mediaSource);
         video.addEventListener('playing', () => {
+          if (stopped) return;
           retryDelay = MIN_RETRY_MS;
+          onPlayingChange(true);
         });
         video.addEventListener('error', () => socket.close());
         mediaSource.addEventListener('sourceopen', () => {
@@ -287,7 +320,7 @@
       function connect() {
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         let failed = false;
-        socket = new WebSocket(`${protocol}//${location.host}/api/cameras/${camera.id}/live`);
+        socket = new WebSocket(`${protocol}//${location.host}/api/cameras/${camera.id}/live?stream=${quality}`);
         socket.binaryType = 'arraybuffer';
         socket.onmessage = ({ data }) => {
           if (stopped) return;
@@ -325,16 +358,107 @@
       };
     }
 
-    function startFullStream() {
+    function startGridStream(camera) {
+      stopGridStream(camera);
+      if (document.hidden || fullCamera) return;
+      const time = camera.card.querySelector('.time');
+      gridStreams.set(camera.id, startStream(camera, camera.card.querySelector('.frame'), {
+        quality: 'sub',
+        onPlayingChange(playing) {
+          time.textContent = playing ? 'Live' : '';
+        },
+      }));
+    }
+
+    function stopGridStream(camera) {
+      gridStreams.get(camera.id)?.stop();
+      gridStreams.delete(camera.id);
+      camera.card.querySelector('.time').textContent = '';
+    }
+
+    function startLiveGrid() {
+      for (const camera of shownCameras()) startGridStream(camera);
+    }
+
+    function stopLiveGrid() {
+      for (const camera of cameras) stopGridStream(camera);
+    }
+
+    function applyInterval() {
+      startAutoRefresh();
+      if (!cameras.length) return;
+      if (isLive()) {
+        refreshQueued = false;
+        refreshButton.disabled = true;
+        startLiveGrid();
+        updateStatus();
+      } else if (gridStreams.size || refreshButton.disabled) {
+        stopLiveGrid();
+        for (const camera of shownCameras()) {
+          const frame = camera.card.querySelector('.frame');
+          frame.className = 'frame';
+          frame.textContent = 'Loading…';
+        }
+        if (refreshing) refreshQueued = true;
+        else refresh();
+      }
+    }
+
+    function loadFullSnapshot() {
+      if (fullLoading) return;
+      fullLoading = true;
+      const loadId = fullLoadId;
+      const image = new Image();
+      image.alt = fullCamera.name;
+      const finish = (show) => {
+        // The camera or refresh setting may have changed while this was loading.
+        if (loadId !== fullLoadId) return;
+        fullLoading = false;
+        show();
+      };
+      image.onload = () => finish(() => {
+        fullFrame.className = 'frame';
+        fullFrame.replaceChildren(image);
+      });
+      image.onerror = () => finish(() => {
+        fullFrame.className = 'frame failed';
+        fullFrame.textContent = 'Snapshot failed';
+      });
+      image.src = `/api/cameras/${fullCamera.id}/snapshot?full=1&t=${Date.now()}`;
+    }
+
+    function stopFullView() {
       fullStream?.stop();
-      fullStream = document.hidden ? null : startStream(fullCamera, fullFrame);
+      fullStream = null;
+      clearInterval(fullTimer);
+      fullLoadId++;
+      fullLoading = false;
+    }
+
+    function startFullView() {
+      stopFullView();
+      if (document.hidden) return;
+      if (fullInterval.value === 'live') {
+        fullStream = startStream(fullCamera, fullFrame, { quality: 'main' });
+        return;
+      }
+      if (!fullFrame.querySelector('img')) {
+        fullFrame.className = 'frame';
+        fullFrame.textContent = 'Loading…';
+      }
+      loadFullSnapshot();
+      const seconds = Number(fullInterval.value);
+      if (seconds) fullTimer = setInterval(loadFullSnapshot, seconds * 1000);
     }
 
     function openFullView(camera) {
       fullCamera = camera;
+      stopLiveGrid();
       document.getElementById('full-name').textContent = camera.name;
+      fullInterval.value = intervalSelect.value;
+      fullFrame.replaceChildren();
       fullView.showModal();
-      startFullStream();
+      startFullView();
     }
 
     async function loadCameras() {
@@ -361,19 +485,22 @@
         card.querySelector('.name').textContent = camera.name;
         card.querySelector('.name').title = camera.name;
         card.querySelector('.frame').textContent = 'Loading…';
-        card.querySelector('.link').addEventListener('click', (event) => {
-          if (!camera.loaded) event.preventDefault();
-        });
-        const liveButton = card.querySelector('.live-button');
-        liveButton.disabled = camera.online === false;
-        liveButton.setAttribute('aria-label', `Watch ${camera.name} live`);
-        liveButton.addEventListener('click', () => openFullView(camera));
+        const link = card.querySelector('.link');
+        link.disabled = camera.online === false;
+        link.setAttribute('aria-label', `Open ${camera.name} full size`);
+        link.addEventListener('click', () => openFullView(camera));
         card.hidden = hiddenCameras.has(camera.id);
         camera.card = card;
         grid.append(card);
         addCameraOption(camera);
       }
-      await refreshSnapshots();
+      if (isLive()) {
+        startLiveGrid();
+        updateStatus();
+        finishRefresh();
+      } else {
+        await refreshSnapshots();
+      }
     }
 
     function refresh() {
@@ -383,7 +510,7 @@
     function startAutoRefresh() {
       clearInterval(autoRefreshTimer);
       const seconds = Number(intervalSelect.value);
-      if (!seconds) return;
+      if (!seconds) return; // Off or Live
       autoRefreshTimer = setInterval(() => {
         // Skip a cycle while the last one is loading, nobody is watching, or live video
         // is open, to spare the NVR.
@@ -397,22 +524,26 @@
       if (!cameraMenu.contains(event.target)) cameraMenu.open = false;
     });
     document.addEventListener('visibilitychange', () => {
-      if (fullCamera) startFullStream();
+      if (fullCamera) startFullView();
+      else if (isLive() && document.hidden) stopLiveGrid();
+      else if (isLive()) startLiveGrid();
     });
     refreshButton.addEventListener('click', requestRefresh);
     intervalSelect.addEventListener('change', () => {
       try { localStorage.setItem(INTERVAL_KEY, intervalSelect.value); } catch {}
-      startAutoRefresh();
+      applyInterval();
     });
     document.getElementById('full-close').addEventListener('click', () => fullView.close());
     fullView.addEventListener('click', (event) => {
       if (event.target === fullView) fullView.close();
     });
+    // Applies only to this view: it isn't saved and doesn't change the main setting.
+    fullInterval.addEventListener('change', startFullView);
     fullView.addEventListener('close', () => {
-      fullStream?.stop();
-      fullStream = null;
+      stopFullView();
       fullCamera = null;
-      if (!refreshing) refreshSnapshots({ quiet: true });
+      if (isLive()) startLiveGrid();
+      else if (!refreshing) refreshSnapshots({ quiet: true });
     });
 
     try { intervalSelect.value = localStorage.getItem(INTERVAL_KEY) ?? '0'; } catch {}
