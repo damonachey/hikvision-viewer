@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cameras</title>
+  <style>
+    :root { color-scheme: dark; --bg: #111418; --card: #1b2026; --line: #2c333b; --text: #e8ebee; --muted: #98a2ad; --bad: #ff8a80; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 16px; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
+    header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+    h1 { margin: 0; font-size: 20px; }
+    #status { flex: 1; color: var(--muted); font-size: 13px; }
+    label { color: var(--muted); font-size: 13px; }
+    button, select { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
+    select { margin-left: 6px; padding: 8px; }
+    button:disabled { opacity: .6; cursor: default; }
+    #error { margin-bottom: 16px; color: var(--bad); }
+    #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+    .camera { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+    .frame { display: flex; align-items: center; justify-content: center; aspect-ratio: 16 / 9; background: #000; color: var(--muted); font-size: 13px; text-align: center; }
+    .frame img { display: block; width: 100%; height: 100%; object-fit: contain; }
+    .frame.failed { color: var(--bad); }
+    .caption { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; }
+    .name { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    .time { flex: none; color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Cameras</h1>
+    <span id="status"></span>
+    <label>Auto refresh
+      <select id="interval">
+        <option value="0">Off</option>
+        <option value="5">5 seconds</option>
+        <option value="10">10 seconds</option>
+        <option value="30">30 seconds</option>
+        <option value="60">1 minute</option>
+        <option value="300">5 minutes</option>
+      </select>
+    </label>
+    <button id="refresh" type="button">Refresh</button>
+  </header>
+  <div id="error" hidden></div>
+  <main id="grid"></main>
+  <template id="camera-template">
+    <article class="camera">
+      <a class="link" target="_blank" rel="noopener"><div class="frame"></div></a>
+      <div class="caption"><span class="name"></span><span class="time"></span></div>
+    </article>
+  </template>
+
+  <script>
+    const grid = document.getElementById('grid');
+    const statusText = document.getElementById('status');
+    const errorBox = document.getElementById('error');
+    const refreshButton = document.getElementById('refresh');
+    const intervalSelect = document.getElementById('interval');
+    const template = document.getElementById('camera-template');
+    const INTERVAL_KEY = 'autoRefreshSeconds';
+    let cameras = [];
+    let autoRefreshTimer;
+
+    function loadSnapshot(camera, card) {
+      const frame = card.querySelector('.frame');
+      const url = `/api/cameras/${camera.id}/snapshot?t=${Date.now()}`;
+      return new Promise((resolve) => {
+        const image = new Image();
+        image.alt = camera.name;
+        image.onload = () => {
+          frame.className = 'frame';
+          frame.replaceChildren(image);
+          card.querySelector('.link').href = url;
+          card.querySelector('.time').textContent = new Date().toLocaleTimeString();
+          resolve(true);
+        };
+        image.onerror = () => {
+          frame.className = 'frame failed';
+          frame.textContent = camera.online === false ? 'Camera offline' : 'Snapshot failed';
+          card.querySelector('.time').textContent = '';
+          resolve(false);
+        };
+        image.src = url;
+      });
+    }
+
+    async function refreshSnapshots() {
+      refreshButton.disabled = true;
+      statusText.textContent = 'Loading snapshots…';
+      const results = await Promise.all(cameras.map((camera) => loadSnapshot(camera, camera.card)));
+      const loaded = results.filter(Boolean).length;
+      statusText.textContent = `${loaded} of ${cameras.length} snapshots loaded`;
+      refreshButton.disabled = false;
+    }
+
+    async function loadCameras() {
+      refreshButton.disabled = true;
+      errorBox.hidden = true;
+      statusText.textContent = 'Finding cameras…';
+      try {
+        const res = await fetch('/api/cameras');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        cameras = data.cameras;
+      } catch (err) {
+        errorBox.textContent = err.message;
+        errorBox.hidden = false;
+        statusText.textContent = '';
+        refreshButton.disabled = false;
+        return;
+      }
+
+      grid.replaceChildren();
+      for (const camera of cameras) {
+        const card = template.content.firstElementChild.cloneNode(true);
+        card.querySelector('.name').textContent = camera.name;
+        card.querySelector('.name').title = camera.name;
+        card.querySelector('.frame').textContent = 'Loading…';
+        camera.card = card;
+        grid.append(card);
+      }
+      await refreshSnapshots();
+    }
+
+    function refresh() {
+      return cameras.length ? refreshSnapshots() : loadCameras();
+    }
+
+    function startAutoRefresh() {
+      clearInterval(autoRefreshTimer);
+      const seconds = Number(intervalSelect.value);
+      if (!seconds) return;
+      autoRefreshTimer = setInterval(() => {
+        // Skip a cycle while the last one is loading or nobody is watching, to spare the NVR.
+        if (!refreshButton.disabled && !document.hidden) refresh();
+      }, seconds * 1000);
+    }
+
+    refreshButton.addEventListener('click', refresh);
+    intervalSelect.addEventListener('change', () => {
+      try { localStorage.setItem(INTERVAL_KEY, intervalSelect.value); } catch {}
+      startAutoRefresh();
+    });
+
+    try { intervalSelect.value = localStorage.getItem(INTERVAL_KEY) ?? '0'; } catch {}
+    if (intervalSelect.selectedIndex === -1) intervalSelect.value = '0';
+    startAutoRefresh();
+    loadCameras();
+  </script>
+</body>
+</html>
