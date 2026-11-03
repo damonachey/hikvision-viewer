@@ -59,6 +59,7 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 - The full-size view has its own refresh list. It only applies while the view is open, doesn't change the page's setting and isn't saved.
 - In the full-size view, **Live** plays the camera's main stream, without audio, and stops when you close the view or switch tabs. The other settings show snapshots at the highest resolution the NVR offers. The NVR may limit those below the camera's resolution, such as 1920×1080 on a DS-7608N-E2/8P, so use **Live** for the full resolution.
 - The pop-out icon in the full-size view moves that camera to its own window with the same refresh setting and returns the page to its tiles. If your browser blocks the new window, the full-size view stays open.
+- The pop-out icon on a tile opens that camera directly in its own window, using the page's auto refresh setting. The tile stays on the page.
 - Each browser remembers its own camera and auto refresh choices, and clearing its site data resets them.
 
 ## Security
