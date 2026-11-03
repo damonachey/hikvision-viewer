@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import http from 'node:http';
+import { attachLiveStreams } from './live.js';
 import { createNvrClient, NvrError } from './nvr.js';
 
-const { NVR_URL, NVR_USER, NVR_PASSWORD, NVR_ALLOW_SELF_SIGNED, HOST = '127.0.0.1', PORT = '3000' } = process.env;
+const { NVR_URL, NVR_USER, NVR_PASSWORD, NVR_ALLOW_SELF_SIGNED, NVR_RTSP_PORT = '554', HOST = '127.0.0.1', PORT = '3000' } = process.env;
 
 if (!NVR_URL || !NVR_USER || !NVR_PASSWORD) {
   console.error('Set NVR_URL, NVR_USER and NVR_PASSWORD in .env (see .env.example).');
@@ -14,6 +15,7 @@ const nvr = createNvrClient({
   user: NVR_USER,
   password: NVR_PASSWORD,
   allowSelfSigned: NVR_ALLOW_SELF_SIGNED === 'true',
+  rtspPort: Number(NVR_RTSP_PORT),
 });
 
 const indexPage = new URL('../public/index.html', import.meta.url);
@@ -55,6 +57,8 @@ const server = http.createServer((req, res) => {
     else res.end();
   });
 });
+
+attachLiveStreams(server, nvr);
 
 server.listen(Number(PORT), HOST, () => {
   console.log(`Camera viewer running at http://${HOST}:${PORT}`);

@@ -1,31 +1,39 @@
 # Hikvision Camera Viewer
 
-A small local web app that shows snapshots from the cameras on a Hikvision NVR, using the NVR's ISAPI interface.
+A small local web app that shows snapshots from the cameras on a Hikvision NVR, with live video from one camera at a time.
 
-A Node server logs in to the NVR with digest auth and passes the images to a single web page, so your NVR credentials never reach the browser. It has no dependencies to install.
+A Node server logs in to the NVR and passes the images and video to a single web page, so your NVR credentials never reach the browser. Snapshots use the NVR's ISAPI interface, and live video uses RTSP through FFmpeg.
 
 ## Requirements
 
 - Node.js 22.9 or newer
-- A Hikvision NVR reachable from this machine, with ISAPI enabled
+- [FFmpeg](https://ffmpeg.org/) on your `PATH`, for live video
+- A Hikvision NVR reachable from this machine, with ISAPI and RTSP enabled
 - An NVR account that is allowed to view the cameras
+- Cameras set to H.264, for live video
 
 ## Setup
 
-1. Create your config file:
+1. Install the dependencies:
+
+   ```powershell
+   npm install
+   ```
+
+2. Create your config file:
 
    ```powershell
    Copy-Item .env.example .env
    ```
 
-2. Set `NVR_URL`, `NVR_USER` and `NVR_PASSWORD` in `.env`.
-3. Start the app:
+3. Set `NVR_URL`, `NVR_USER` and `NVR_PASSWORD` in `.env`.
+4. Start the app:
 
    ```powershell
    npm start
    ```
 
-4. Open the address printed in the terminal, which is http://127.0.0.1:9999 if you keep the example port.
+5. Open the address printed in the terminal, which is http://127.0.0.1:9999 if you keep the example port.
 
 ## Configuration
 
@@ -36,6 +44,7 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 | `NVR_URL` | Yes | | Address of the NVR, such as `http://192.168.1.64` |
 | `NVR_USER` | Yes | | NVR username |
 | `NVR_PASSWORD` | Yes | | NVR password |
+| `NVR_RTSP_PORT` | No | `554` | RTSP port on the NVR, used for live video |
 | `NVR_ALLOW_SELF_SIGNED` | No | `false` | Set to `true` if `NVR_URL` is `https` and the NVR uses a self-signed certificate |
 | `HOST` | No | `127.0.0.1` | Address the app listens on |
 | `PORT` | No | `3000` | Port the app listens on (`.env.example` sets `9999`) |
@@ -44,7 +53,8 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 
 - **Cameras** lets you tick which cameras to show. Hidden cameras aren't requested from the NVR, and new cameras appear by default.
 - **Refresh** gets new snapshots from every shown camera.
-- **Auto refresh** repeats that on a timer, from every 5 seconds to every 5 minutes. A refresh is skipped if the last one is still loading or the tab is in the background.
+- **Auto refresh** repeats that every 1, 5, 30 or 60 seconds. A refresh is skipped if the last one is still loading, the tab is in the background or a live view is open.
+- **Live** on a tile opens that camera's main stream full size. Video stops when you close it or switch tabs. It has no audio, and it can take several seconds to start.
 - Each browser remembers its own camera and auto refresh choices, and clearing its site data resets them.
 - Click an image to open it full size in a new tab.
 
@@ -52,7 +62,8 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 
 - **The app has no login.** Anyone who can reach it can see your cameras, so it only listens on `127.0.0.1` by default. Add a login before setting `HOST` to anything else.
 - **Failed logins can lock the NVR account.** Hikvision locks accounts after repeated failures, so the app stops trying after one rejected password. Fix `.env` and restart to try again.
-- **Use a separate account if you can.** A low-privilege NVR user limits the damage if `.env` is exposed.
+- **The password is briefly visible to local programs.** FFmpeg needs it in the RTSP address, so other programs on this machine can see it while a live view is open.
+- **Use a separate account if you can.** A low-privilege NVR user limits the damage if the password is exposed.
 
 ## Troubleshooting
 
@@ -63,6 +74,9 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 | "Could not reach the NVR" | Check `NVR_URL` and that this machine can reach the NVR |
 | Cameras are missing | Check the **Cameras** menu. Only IP camera channels are listed, so analog channels on a hybrid recorder won't appear. |
 | "Camera offline" or "Snapshot failed" | Check the camera's status on the NVR and that the account is allowed to view it |
+| "FFmpeg is not installed on the server" | Install FFmpeg, make sure it's on your `PATH`, and restart the app |
+| Live view stays on "Reconnecting…" | Check that RTSP is enabled on the NVR and that `NVR_RTSP_PORT` is right. The server log has the reason. |
+| Live view is choppy or falls behind | The NVR may be limiting its output. Try closing other apps that are viewing its cameras. |
 
 ## API
 
@@ -70,11 +84,13 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 |---|---|
 | `GET /api/cameras` | JSON list of the cameras, each with `id`, `name` and `online` |
 | `GET /api/cameras/:id/snapshot` | The camera's current main-stream image |
+| WebSocket `/api/cameras/:id/live` | The camera's main stream as fragmented MP4, after a JSON message with its codec. Only same-origin pages can connect, and the server allows 2 streams at once. |
 
 ## Project layout
 
 | Path | Purpose |
 |---|---|
 | `src/nvr.js` | NVR client: digest auth, camera list and snapshots |
+| `src/live.js` | Live video: runs FFmpeg and sends its output over WebSockets |
 | `src/server.js` | Config, routes and the web server |
 | `public/index.html` | The camera grid page |

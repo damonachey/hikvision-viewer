@@ -8,5 +8,8 @@
   },
   "scripts": {
     "start": "node --env-file-if-exists=.env src/server.js"
+  },
+  "dependencies": {
+    "ws": "^8.22.1"
   }
 }

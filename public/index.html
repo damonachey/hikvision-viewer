@@ -13,22 +13,28 @@
     #status { flex: 1; color: var(--muted); font-size: 13px; }
     label { color: var(--muted); font-size: 13px; }
     button, select { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: default; }
     select { margin-left: 6px; padding: 8px; }
     summary { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); cursor: pointer; list-style: none; }
     summary::-webkit-details-marker { display: none; }
     #camera-list { position: absolute; top: 100%; right: 0; z-index: 1; width: 240px; max-width: 100%; max-height: 60vh; margin-top: 4px; padding: 6px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
     #camera-list label { display: flex; align-items: center; gap: 8px; padding: 6px; color: var(--text); font-size: 14px; cursor: pointer; }
     #camera-list .offline { margin-left: auto; color: var(--muted); font-size: 12px; }
-    button:disabled { opacity: .6; cursor: default; }
     #error { margin-bottom: 16px; color: var(--bad); }
     #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 12px; }
     .camera { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+    .link { display: block; color: inherit; text-decoration: none; }
     .frame { display: flex; align-items: center; justify-content: center; aspect-ratio: 16 / 9; background: #000; color: var(--muted); font-size: 13px; text-align: center; }
-    .frame img { display: block; width: 100%; height: 100%; object-fit: contain; }
+    .frame img, .frame video { display: block; width: 100%; height: 100%; object-fit: contain; }
     .frame.failed { color: var(--bad); }
-    .caption { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; }
+    .caption { display: flex; align-items: center; gap: 8px; padding: 8px 10px; }
     .name { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-    .time { flex: none; color: var(--muted); font-size: 13px; }
+    .time { flex: none; margin-left: auto; color: var(--muted); font-size: 13px; }
+    .live-button { flex: none; padding: 3px 10px; font-size: 13px; }
+    #full-view { width: min(1600px, calc(100vw - 32px)); max-width: none; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
+    #full-view::backdrop { background: rgba(0, 0, 0, .8); }
+    .full-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; }
+    #full-frame { width: 100%; height: auto; max-height: calc(100vh - 110px); }
   </style>
 </head>
 <body>
@@ -38,11 +44,10 @@
     <label>Auto refresh
       <select id="interval">
         <option value="0">Off</option>
+        <option value="1">1 second</option>
         <option value="5">5 seconds</option>
-        <option value="10">10 seconds</option>
         <option value="30">30 seconds</option>
-        <option value="60">1 minute</option>
-        <option value="300">5 minutes</option>
+        <option value="60">60 seconds</option>
       </select>
     </label>
     <details id="camera-menu">
@@ -55,10 +60,21 @@
   <main id="grid"></main>
   <template id="camera-template">
     <article class="camera">
-      <a class="link" target="_blank" rel="noopener"><div class="frame"></div></a>
-      <div class="caption"><span class="name"></span><span class="time"></span></div>
+      <a class="link" href="#" target="_blank" rel="noopener"><div class="frame"></div></a>
+      <div class="caption">
+        <span class="name"></span>
+        <span class="time"></span>
+        <button class="live-button" type="button">Live</button>
+      </div>
     </article>
   </template>
+  <dialog id="full-view">
+    <div class="full-header">
+      <span id="full-name" class="name"></span>
+      <button id="full-close" type="button">Close</button>
+    </div>
+    <div id="full-frame" class="frame"></div>
+  </dialog>
 
   <script>
     const grid = document.getElementById('grid');
@@ -69,11 +85,22 @@
     const template = document.getElementById('camera-template');
     const cameraMenu = document.getElementById('camera-menu');
     const cameraList = document.getElementById('camera-list');
+    const fullView = document.getElementById('full-view');
+    const fullFrame = document.getElementById('full-frame');
     const INTERVAL_KEY = 'autoRefreshSeconds';
     const HIDDEN_KEY = 'hiddenCameras';
+    const MIN_RETRY_MS = 1000;
+    const MAX_RETRY_MS = 30000;
+    // Main streams can leave over 2 seconds between frames, which isn't falling behind.
+    const MAX_LAG_SECONDS = 3;
+    // Removing video also removes frames up to the next keyframe, and keyframes can be
+    // far apart, so keep plenty or the frames being played could be removed too.
+    const KEEP_BEHIND_SECONDS = 30;
     const hiddenCameras = readHiddenCameras();
     let cameras = [];
     let autoRefreshTimer;
+    let fullCamera = null;
+    let fullStream = null;
 
     // Saves the hidden cameras rather than the shown ones, so new cameras appear by default.
     function readHiddenCameras() {
@@ -156,6 +183,138 @@
       refreshButton.disabled = false;
     }
 
+    // Plays one camera's main stream in a frame and reconnects until stop() is called.
+    function startStream(camera, frame) {
+      const waitingText = camera.online === false ? 'Camera offline' : 'Reconnecting…';
+      let socket, video, sourceBuffer, retryTimer;
+      let queue = [];
+      let stopped = false;
+      let retryDelay = MIN_RETRY_MS;
+
+      function clearVideo() {
+        if (!video) return;
+        URL.revokeObjectURL(video.src);
+        video.removeAttribute('src');
+        video.load();
+        video = null;
+        sourceBuffer = null;
+        queue = [];
+      }
+
+      function showMessage(text, failed = false) {
+        clearVideo();
+        frame.className = failed ? 'frame failed' : 'frame';
+        frame.textContent = text;
+      }
+
+      function appendNext() {
+        if (!sourceBuffer || sourceBuffer.updating || !queue.length) return;
+        try {
+          sourceBuffer.appendBuffer(queue.shift());
+        } catch {
+          socket.close();
+        }
+      }
+
+      function onBufferUpdated() {
+        const { buffered } = sourceBuffer;
+        if (buffered.length) {
+          const start = buffered.start(0);
+          const end = buffered.end(buffered.length - 1);
+          if (video.currentTime < start || end - video.currentTime > MAX_LAG_SECONDS) {
+            video.currentTime = Math.max(start, end - 0.2);
+          }
+          if (video.currentTime - start > KEEP_BEHIND_SECONDS * 2) {
+            sourceBuffer.remove(start, video.currentTime - KEEP_BEHIND_SECONDS);
+            return;
+          }
+        }
+        appendNext();
+      }
+
+      function startVideo(codec) {
+        const type = `video/mp4; codecs="${codec}"`;
+        if (!window.MediaSource || !MediaSource.isTypeSupported(type)) {
+          stopped = true;
+          socket.close();
+          showMessage("This browser can't play this video", true);
+          return;
+        }
+        const mediaSource = new MediaSource();
+        video = document.createElement('video');
+        video.muted = true;
+        video.playsInline = true;
+        video.setAttribute('aria-label', camera.name);
+        video.src = URL.createObjectURL(mediaSource);
+        video.addEventListener('playing', () => {
+          retryDelay = MIN_RETRY_MS;
+        });
+        video.addEventListener('error', () => socket.close());
+        mediaSource.addEventListener('sourceopen', () => {
+          if (stopped) return;
+          sourceBuffer = mediaSource.addSourceBuffer(type);
+          sourceBuffer.addEventListener('updateend', onBufferUpdated);
+          appendNext();
+        }, { once: true });
+        frame.className = 'frame';
+        frame.replaceChildren(video);
+        // Autoplay alone can wait forever, because a live buffer stays too short to trigger it.
+        video.play().catch(() => {});
+      }
+
+      function connect() {
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        let failed = false;
+        socket = new WebSocket(`${protocol}//${location.host}/api/cameras/${camera.id}/live`);
+        socket.binaryType = 'arraybuffer';
+        socket.onmessage = ({ data }) => {
+          if (stopped) return;
+          if (typeof data !== 'string') {
+            queue.push(data);
+            appendNext();
+            return;
+          }
+          const message = JSON.parse(data);
+          if (message.type === 'init') startVideo(message.codec);
+          else if (message.type === 'error' && message.fatal) {
+            failed = true;
+            showMessage(message.message, true);
+          }
+        };
+        socket.onclose = () => {
+          if (stopped || failed) return;
+          showMessage(waitingText);
+          retryTimer = setTimeout(connect, retryDelay);
+          retryDelay = Math.min(retryDelay * 2, MAX_RETRY_MS);
+        };
+      }
+
+      showMessage(camera.online === false ? 'Camera offline' : 'Connecting…');
+      connect();
+
+      return {
+        stop() {
+          stopped = true;
+          clearTimeout(retryTimer);
+          socket.close();
+          clearVideo();
+          frame.replaceChildren();
+        },
+      };
+    }
+
+    function startFullStream() {
+      fullStream?.stop();
+      fullStream = document.hidden ? null : startStream(fullCamera, fullFrame);
+    }
+
+    function openFullView(camera) {
+      fullCamera = camera;
+      document.getElementById('full-name').textContent = camera.name;
+      fullView.showModal();
+      startFullStream();
+    }
+
     async function loadCameras() {
       refreshButton.disabled = true;
       errorBox.hidden = true;
@@ -180,6 +339,13 @@
         card.querySelector('.name').textContent = camera.name;
         card.querySelector('.name').title = camera.name;
         card.querySelector('.frame').textContent = 'Loading…';
+        card.querySelector('.link').addEventListener('click', (event) => {
+          if (!camera.loaded) event.preventDefault();
+        });
+        const liveButton = card.querySelector('.live-button');
+        liveButton.disabled = camera.online === false;
+        liveButton.setAttribute('aria-label', `Watch ${camera.name} live`);
+        liveButton.addEventListener('click', () => openFullView(camera));
         card.hidden = hiddenCameras.has(camera.id);
         camera.card = card;
         grid.append(card);
@@ -197,18 +363,32 @@
       const seconds = Number(intervalSelect.value);
       if (!seconds) return;
       autoRefreshTimer = setInterval(() => {
-        // Skip a cycle while the last one is loading or nobody is watching, to spare the NVR.
-        if (!refreshButton.disabled && !document.hidden) refresh();
+        // Skip a cycle while the last one is loading, nobody is watching, or live video
+        // is open, to spare the NVR.
+        if (!refreshButton.disabled && !document.hidden && !fullCamera) refresh();
       }, seconds * 1000);
     }
 
     document.addEventListener('click', (event) => {
       if (!cameraMenu.contains(event.target)) cameraMenu.open = false;
     });
+    document.addEventListener('visibilitychange', () => {
+      if (fullCamera) startFullStream();
+    });
     refreshButton.addEventListener('click', refresh);
     intervalSelect.addEventListener('change', () => {
       try { localStorage.setItem(INTERVAL_KEY, intervalSelect.value); } catch {}
       startAutoRefresh();
+    });
+    document.getElementById('full-close').addEventListener('click', () => fullView.close());
+    fullView.addEventListener('click', (event) => {
+      if (event.target === fullView) fullView.close();
+    });
+    fullView.addEventListener('close', () => {
+      fullStream?.stop();
+      fullStream = null;
+      fullCamera = null;
+      if (!refreshButton.disabled) refresh();
     });
 
     try { intervalSelect.value = localStorage.getItem(INTERVAL_KEY) ?? '0'; } catch {}

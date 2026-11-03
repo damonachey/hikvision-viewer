@@ -8,6 +8,8 @@ const MAX_CONCURRENT_REQUESTS = 4;
 
 const HASHES = { MD5: 'md5', 'SHA-256': 'sha256' };
 
+export const CREDENTIALS_MESSAGE = 'The NVR rejected the username or password. Fix .env and restart the app.';
+
 export class NvrError extends Error {
   constructor(message, status = 502) {
     super(message);
@@ -73,7 +75,7 @@ function xmlValue(xml, tag) {
     .replaceAll('&amp;', '&');
 }
 
-export function createNvrClient({ url, user, password, allowSelfSigned = false }) {
+export function createNvrClient({ url, user, password, allowSelfSigned = false, rtspPort = 554 }) {
   const base = new URL(url);
   const transport = base.protocol === 'https:' ? https : http;
 
@@ -125,9 +127,7 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false }
   }
 
   async function authedGet(path) {
-    if (credentialsRejected) {
-      throw new NvrError('The NVR rejected the username or password. Fix .env and restart the app.', 503);
-    }
+    if (credentialsRejected) throw new NvrError(CREDENTIALS_MESSAGE, 503);
 
     try {
       let res = await send(path);
@@ -138,7 +138,7 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false }
         res = await send(path, digestHeader(challenge, { method: 'GET', uri: path, user, password }));
         if (res.status === 401) {
           credentialsRejected = true;
-          throw new NvrError('The NVR rejected the username or password. Fix .env and restart the app.', 503);
+          throw new NvrError(CREDENTIALS_MESSAGE, 503);
         }
       }
       if (res.status !== 200) throw new NvrError(`The NVR returned HTTP ${res.status} for ${path}`);
@@ -150,6 +150,16 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false }
   }
 
   return {
+    credentialsRejected: () => credentialsRejected,
+    rejectCredentials() {
+      credentialsRejected = true;
+    },
+
+    rtspUrl(cameraId) {
+      const login = `${encodeURIComponent(user)}:${encodeURIComponent(password)}`;
+      return `rtsp://${login}@${base.hostname}:${rtspPort}/Streaming/Channels/${cameraId}01`;
+    },
+
     async listCameras() {
       // Sequential so a wrong password costs one failed login, not two.
       const channels = await withSlot(() => authedGet('/ISAPI/ContentMgmt/InputProxy/channels'));
