@@ -37,7 +37,11 @@
     #full-view::backdrop { background: rgba(0, 0, 0, .8); }
     .full-header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 10px; }
     .full-header .name { margin-right: auto; }
+    #full-popout { display: flex; align-items: center; justify-content: center; width: 39px; height: 39px; padding: 0; }
     #full-frame { width: 100%; height: auto; max-height: calc(100vh - 110px); }
+    body.popout > header, body.popout > #grid, body.popout > #status, body.popout #full-popout, body.popout #full-close { display: none; }
+    body.popout #full-view[open] { display: flex; flex-direction: column; width: 100vw; height: 100vh; max-height: none; margin: 0; border: 0; border-radius: 0; }
+    body.popout #full-frame { flex: 1; min-height: 0; aspect-ratio: auto; max-height: none; }
   </style>
 </head>
 <body>
@@ -85,6 +89,13 @@
         <option value="60">60 seconds</option>
         <option value="0" selected>Off</option>
       </select>
+      <button id="full-popout" type="button" aria-label="Pop out to a new window" title="Pop out to a new window">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15 3h6v6"/>
+          <path d="M10 14 21 3"/>
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+        </svg>
+      </button>
       <button id="full-close" type="button">Close</button>
     </div>
     <div id="full-frame" class="frame"></div>
@@ -102,6 +113,8 @@
     const fullView = document.getElementById('full-view');
     const fullFrame = document.getElementById('full-frame');
     const fullInterval = document.getElementById('full-interval');
+    const pageParams = new URLSearchParams(location.search);
+    const popoutCameraId = pageParams.get('camera');
     const INTERVAL_KEY = 'autoRefreshSeconds';
     const HIDDEN_KEY = 'hiddenCameras';
     const MIN_RETRY_MS = 1000;
@@ -454,14 +467,39 @@
       if (seconds) fullTimer = setInterval(loadFullSnapshot, seconds * 1000);
     }
 
-    function openFullView(camera) {
+    function openFullView(camera, refreshSetting = intervalSelect.value) {
       fullCamera = camera;
       stopLiveGrid();
       document.getElementById('full-name').textContent = camera.name;
-      fullInterval.value = intervalSelect.value;
+      fullInterval.value = refreshSetting;
+      if (fullInterval.selectedIndex === -1) fullInterval.value = '0';
       fullFrame.replaceChildren();
       fullView.showModal();
       startFullView();
+    }
+
+    function popOutFullView() {
+      const url = `/?camera=${fullCamera.id}&refresh=${fullInterval.value}`;
+      const size = `left=0,top=0,width=${screen.availWidth},height=${screen.availHeight}`;
+      // Keep the view open if the browser blocked the new window.
+      if (window.open(url, `camera-${fullCamera.id}`, `popup,${size}`)) fullView.close();
+    }
+
+    // The page opened by Pop out: one camera filling the window, with no tiles.
+    async function startPopout() {
+      document.body.classList.add('popout');
+      try {
+        const res = await fetch('/api/cameras');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        const camera = data.cameras.find(({ id }) => id === popoutCameraId);
+        if (!camera) throw new Error(`Camera ${popoutCameraId} was not found`);
+        document.title = camera.name;
+        openFullView(camera, pageParams.get('refresh'));
+      } catch (err) {
+        errorBox.textContent = err.message;
+        errorBox.hidden = false;
+      }
     }
 
     async function loadCameras() {
@@ -537,8 +575,13 @@
       applyInterval();
     });
     document.getElementById('full-close').addEventListener('click', () => fullView.close());
+    document.getElementById('full-popout').addEventListener('click', popOutFullView);
     fullView.addEventListener('click', (event) => {
-      if (event.target === fullView) fullView.close();
+      if (event.target === fullView && !popoutCameraId) fullView.close();
+    });
+    // Esc would leave a popped-out window empty, so there it does nothing.
+    fullView.addEventListener('cancel', (event) => {
+      if (popoutCameraId) event.preventDefault();
     });
     // Applies only to this view: it isn't saved and doesn't change the main setting.
     fullInterval.addEventListener('change', startFullView);
@@ -551,8 +594,12 @@
 
     try { intervalSelect.value = localStorage.getItem(INTERVAL_KEY) ?? '0'; } catch {}
     if (intervalSelect.selectedIndex === -1) intervalSelect.value = '0';
-    startAutoRefresh();
-    loadCameras();
+    if (popoutCameraId) {
+      startPopout();
+    } else {
+      startAutoRefresh();
+      loadCameras();
+    }
   </script>
 </body>
 </html>
