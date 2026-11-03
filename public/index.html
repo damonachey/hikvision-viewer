@@ -604,7 +604,15 @@
       window.close();
     });
     // Applies only to this view: it isn't saved and doesn't change the main setting.
-    fullInterval.addEventListener('change', startFullView);
+    // A popped-out window keeps it in its address, so reloading the window keeps it too.
+    fullInterval.addEventListener('change', () => {
+      if (popoutCameraId) {
+        const url = new URL(location.href);
+        url.searchParams.set('refresh', fullInterval.value);
+        history.replaceState(null, '', url);
+      }
+      startFullView();
+    });
     fullView.addEventListener('close', () => {
       if (popoutCameraId) return window.close();
       stopFullView();
