@@ -91,7 +91,7 @@
     const HIDDEN_KEY = 'hiddenCameras';
     const MIN_RETRY_MS = 1000;
     const MAX_RETRY_MS = 30000;
-    // Main streams can leave over 2 seconds between frames, which isn't falling behind.
+    // Allows for short network hiccups before skipping ahead to the newest video.
     const MAX_LAG_SECONDS = 3;
     // Removing video also removes frames up to the next keyframe, and keyframes can be
     // far apart, so keep plenty or the frames being played could be removed too.

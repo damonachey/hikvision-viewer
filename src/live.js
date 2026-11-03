@@ -2,8 +2,7 @@ import { spawn } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 import { CREDENTIALS_MESSAGE } from './nvr.js';
 
-// The page shows one camera at a time, and the NVR struggles with several streams.
-// Two leaves room for a second tab or a reconnect while the old stream shuts down.
+// The page shows one camera at a time. Two leaves room for a second tab or a reconnect while the old stream shuts down.
 const MAX_STREAMS = 2;
 const STALL_TIMEOUT_MS = 20_000;
 const MAX_CLIENT_BACKLOG_BYTES = 32 * 1024 * 1024;
@@ -12,7 +11,8 @@ function ffmpegArgs(rtspUrl) {
   return [
     '-hide_banner',
     '-loglevel', 'error',
-    '-rtsp_transport', 'tcp',
+    // Over TCP a DS-7608N-E2/8P sent about 1 Mbit/s and lost frames. UDP gave the full stream.
+    '-rtsp_transport', 'udp',
     // Start quickly. Avoid -fflags nobuffer, which made the video arrive in long bursts.
     '-probesize', '1000000',
     '-analyzeduration', '1000000',

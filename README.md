@@ -75,8 +75,8 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 | Cameras are missing | Check the **Cameras** menu. Only IP camera channels are listed, so analog channels on a hybrid recorder won't appear. |
 | "Camera offline" or "Snapshot failed" | Check the camera's status on the NVR and that the account is allowed to view it |
 | "FFmpeg is not installed on the server" | Install FFmpeg, make sure it's on your `PATH`, and restart the app |
-| Live view stays on "Reconnecting…" | Check that RTSP is enabled on the NVR and that `NVR_RTSP_PORT` is right. The server log has the reason. |
-| Live view is choppy or falls behind | The NVR may be limiting its output. Try closing other apps that are viewing its cameras. |
+| Live view stays on "Reconnecting…" | Check that RTSP is enabled on the NVR, that `NVR_RTSP_PORT` is right, and that your firewall allows UDP video to reach FFmpeg. The server log has the reason. |
+| Live view is choppy or falls behind | Video travels over UDP, so check for packet loss between this machine and the NVR, and close other apps that are viewing its cameras. |
 
 ## API
 
