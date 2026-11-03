@@ -37,16 +37,15 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 | `NVR_USER` | Yes | | NVR username |
 | `NVR_PASSWORD` | Yes | | NVR password |
 | `NVR_ALLOW_SELF_SIGNED` | No | `false` | Set to `true` if `NVR_URL` is `https` and the NVR uses a self-signed certificate |
-| `CAMERAS` | No | All cameras | Comma-separated channel numbers to show, such as `1,2,3` |
 | `HOST` | No | `127.0.0.1` | Address the app listens on |
 | `PORT` | No | `3000` | Port the app listens on (`.env.example` sets `9999`) |
 
-`CAMERAS` lists the cameras to show, so a camera added later stays hidden until you add its number. Hidden cameras are also blocked at the server.
-
 ## Using the page
 
-- **Refresh** gets new snapshots from every camera.
-- **Auto refresh** repeats that on a timer, from every 5 seconds to every 5 minutes. Your browser remembers the choice. A refresh is skipped if the last one is still loading or the tab is in the background.
+- **Cameras** lets you tick which cameras to show. Hidden cameras aren't requested from the NVR, and new cameras appear by default.
+- **Refresh** gets new snapshots from every shown camera.
+- **Auto refresh** repeats that on a timer, from every 5 seconds to every 5 minutes. A refresh is skipped if the last one is still loading or the tab is in the background.
+- Each browser remembers its own camera and auto refresh choices, and clearing its site data resets them.
 - Click an image to open it full size in a new tab.
 
 ## Security
@@ -62,14 +61,14 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 | `EADDRINUSE` when starting | Another app is using that port, so change `PORT` |
 | "The NVR rejected the username or password" | Fix `.env` and restart. The NVR may also have locked the account, so wait for the lock to clear first. |
 | "Could not reach the NVR" | Check `NVR_URL` and that this machine can reach the NVR |
-| Cameras are missing | Check `CAMERAS`. Only IP camera channels are listed, so analog channels on a hybrid recorder won't appear. |
+| Cameras are missing | Check the **Cameras** menu. Only IP camera channels are listed, so analog channels on a hybrid recorder won't appear. |
 | "Camera offline" or "Snapshot failed" | Check the camera's status on the NVR and that the account is allowed to view it |
 
 ## API
 
 | Endpoint | Returns |
 |---|---|
-| `GET /api/cameras` | JSON list of the shown cameras, each with `id`, `name` and `online` |
+| `GET /api/cameras` | JSON list of the cameras, each with `id`, `name` and `online` |
 | `GET /api/cameras/:id/snapshot` | The camera's current main-stream image |
 
 ## Project layout

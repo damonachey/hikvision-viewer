@@ -8,12 +8,17 @@
     :root { color-scheme: dark; --bg: #111418; --card: #1b2026; --line: #2c333b; --text: #e8ebee; --muted: #98a2ad; --bad: #ff8a80; }
     * { box-sizing: border-box; }
     body { margin: 0; padding: 16px; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
-    header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+    header { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
     h1 { margin: 0; font-size: 20px; }
     #status { flex: 1; color: var(--muted); font-size: 13px; }
     label { color: var(--muted); font-size: 13px; }
     button, select { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
     select { margin-left: 6px; padding: 8px; }
+    summary { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); cursor: pointer; list-style: none; }
+    summary::-webkit-details-marker { display: none; }
+    #camera-list { position: absolute; top: 100%; right: 0; z-index: 1; width: 240px; max-width: 100%; max-height: 60vh; margin-top: 4px; padding: 6px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+    #camera-list label { display: flex; align-items: center; gap: 8px; padding: 6px; color: var(--text); font-size: 14px; cursor: pointer; }
+    #camera-list .offline { margin-left: auto; color: var(--muted); font-size: 12px; }
     button:disabled { opacity: .6; cursor: default; }
     #error { margin-bottom: 16px; color: var(--bad); }
     #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 12px; }
@@ -40,6 +45,10 @@
         <option value="300">5 minutes</option>
       </select>
     </label>
+    <details id="camera-menu">
+      <summary>Cameras</summary>
+      <div id="camera-list"></div>
+    </details>
     <button id="refresh" type="button">Refresh</button>
   </header>
   <div id="error" hidden></div>
@@ -58,9 +67,61 @@
     const refreshButton = document.getElementById('refresh');
     const intervalSelect = document.getElementById('interval');
     const template = document.getElementById('camera-template');
+    const cameraMenu = document.getElementById('camera-menu');
+    const cameraList = document.getElementById('camera-list');
     const INTERVAL_KEY = 'autoRefreshSeconds';
+    const HIDDEN_KEY = 'hiddenCameras';
+    const hiddenCameras = readHiddenCameras();
     let cameras = [];
     let autoRefreshTimer;
+
+    // Saves the hidden cameras rather than the shown ones, so new cameras appear by default.
+    function readHiddenCameras() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(HIDDEN_KEY));
+        return new Set(Array.isArray(saved) ? saved : []);
+      } catch {
+        return new Set();
+      }
+    }
+
+    function shownCameras() {
+      return cameras.filter((camera) => !hiddenCameras.has(camera.id));
+    }
+
+    function updateStatus() {
+      const shown = shownCameras();
+      const loaded = shown.filter((camera) => camera.loaded).length;
+      statusText.textContent = shown.length ? `${loaded} of ${shown.length} snapshots loaded` : 'No cameras selected';
+    }
+
+    function setCameraShown(camera, shown) {
+      if (shown) hiddenCameras.delete(camera.id);
+      else hiddenCameras.add(camera.id);
+      try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hiddenCameras])); } catch {}
+
+      camera.card.hidden = !shown;
+      if (!shown) return updateStatus();
+      loadSnapshot(camera, camera.card).then(() => {
+        if (!refreshButton.disabled) updateStatus();
+      });
+    }
+
+    function addCameraOption(camera) {
+      const label = document.createElement('label');
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = !hiddenCameras.has(camera.id);
+      checkbox.addEventListener('change', () => setCameraShown(camera, checkbox.checked));
+      label.append(checkbox, camera.name);
+      if (camera.online === false) {
+        const offline = document.createElement('span');
+        offline.className = 'offline';
+        offline.textContent = 'offline';
+        label.append(offline);
+      }
+      cameraList.append(label);
+    }
 
     function loadSnapshot(camera, card) {
       const frame = card.querySelector('.frame');
@@ -73,13 +134,15 @@
           frame.replaceChildren(image);
           card.querySelector('.link').href = url;
           card.querySelector('.time').textContent = new Date().toLocaleTimeString();
-          resolve(true);
+          camera.loaded = true;
+          resolve();
         };
         image.onerror = () => {
           frame.className = 'frame failed';
           frame.textContent = camera.online === false ? 'Camera offline' : 'Snapshot failed';
           card.querySelector('.time').textContent = '';
-          resolve(false);
+          camera.loaded = false;
+          resolve();
         };
         image.src = url;
       });
@@ -88,9 +151,8 @@
     async function refreshSnapshots() {
       refreshButton.disabled = true;
       statusText.textContent = 'Loading snapshots…';
-      const results = await Promise.all(cameras.map((camera) => loadSnapshot(camera, camera.card)));
-      const loaded = results.filter(Boolean).length;
-      statusText.textContent = `${loaded} of ${cameras.length} snapshots loaded`;
+      await Promise.all(shownCameras().map((camera) => loadSnapshot(camera, camera.card)));
+      updateStatus();
       refreshButton.disabled = false;
     }
 
@@ -112,13 +174,16 @@
       }
 
       grid.replaceChildren();
+      cameraList.replaceChildren();
       for (const camera of cameras) {
         const card = template.content.firstElementChild.cloneNode(true);
         card.querySelector('.name').textContent = camera.name;
         card.querySelector('.name').title = camera.name;
         card.querySelector('.frame').textContent = 'Loading…';
+        card.hidden = hiddenCameras.has(camera.id);
         camera.card = card;
         grid.append(card);
+        addCameraOption(camera);
       }
       await refreshSnapshots();
     }
@@ -137,6 +202,9 @@
       }, seconds * 1000);
     }
 
+    document.addEventListener('click', (event) => {
+      if (!cameraMenu.contains(event.target)) cameraMenu.open = false;
+    });
     refreshButton.addEventListener('click', refresh);
     intervalSelect.addEventListener('change', () => {
       try { localStorage.setItem(INTERVAL_KEY, intervalSelect.value); } catch {}

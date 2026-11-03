@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import http from 'node:http';
 import { createNvrClient, NvrError } from './nvr.js';
 
-const { NVR_URL, NVR_USER, NVR_PASSWORD, NVR_ALLOW_SELF_SIGNED, CAMERAS, HOST = '127.0.0.1', PORT = '3000' } = process.env;
+const { NVR_URL, NVR_USER, NVR_PASSWORD, NVR_ALLOW_SELF_SIGNED, HOST = '127.0.0.1', PORT = '3000' } = process.env;
 
 if (!NVR_URL || !NVR_USER || !NVR_PASSWORD) {
   console.error('Set NVR_URL, NVR_USER and NVR_PASSWORD in .env (see .env.example).');
@@ -17,9 +17,6 @@ const nvr = createNvrClient({
 });
 
 const indexPage = new URL('../public/index.html', import.meta.url);
-
-const shownCameras = CAMERAS?.trim() ? new Set(CAMERAS.split(',').map((id) => id.trim())) : null;
-const isShown = (id) => !shownCameras || shownCameras.has(id);
 
 function sendJson(res, status, data) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -37,12 +34,11 @@ async function handle(req, res) {
   }
 
   if (pathname === '/api/cameras') {
-    const cameras = await nvr.listCameras();
-    return sendJson(res, 200, { cameras: cameras.filter((camera) => isShown(camera.id)) });
+    return sendJson(res, 200, { cameras: await nvr.listCameras() });
   }
 
   const snapshotRoute = pathname.match(/^\/api\/cameras\/(\d+)\/snapshot$/);
-  if (snapshotRoute && isShown(snapshotRoute[1])) {
+  if (snapshotRoute) {
     const { contentType, body } = await nvr.snapshot(snapshotRoute[1]);
     res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'no-store' });
     return res.end(body);
