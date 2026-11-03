@@ -596,13 +596,17 @@
     fullView.addEventListener('click', (event) => {
       if (event.target === fullView && !popoutCameraId) fullView.close();
     });
-    // Esc would leave a popped-out window empty, so there it does nothing.
+    // Esc closes the whole popped-out window. The browser can skip the cancel event, so
+    // the close listener below handles this too.
     fullView.addEventListener('cancel', (event) => {
-      if (popoutCameraId) event.preventDefault();
+      if (!popoutCameraId) return;
+      event.preventDefault();
+      window.close();
     });
     // Applies only to this view: it isn't saved and doesn't change the main setting.
     fullInterval.addEventListener('change', startFullView);
     fullView.addEventListener('close', () => {
+      if (popoutCameraId) return window.close();
       stopFullView();
       fullCamera = null;
       if (isLive()) startLiveGrid();
