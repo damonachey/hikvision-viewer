@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Recordings</title>
   <style>
-    :root { color-scheme: dark; --bg: #111418; --text: #e8ebee; --muted: #98a2ad; }
+    :root { color-scheme: dark; --bg: #111418; --line: #2c333b; --text: #e8ebee; --muted: #98a2ad; }
     * { box-sizing: border-box; }
     body { display: flex; flex-direction: column; min-height: 100vh; margin: 0; padding: 16px; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
     header { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
@@ -13,6 +13,15 @@
     h1 { margin: 0; font-size: 20px; }
     nav a { color: var(--muted); font-size: 20px; font-weight: 600; text-decoration: none; }
     nav a:hover { color: var(--text); }
+    #picker { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+    .row { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+    .row button { min-width: 32px; padding: 4px 8px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--muted); font: inherit; cursor: pointer; }
+    .row button:hover { border-color: var(--line); color: var(--text); }
+    .row button[aria-current="date"] { border-color: var(--muted); }
+    .row button[aria-pressed="true"] { background: var(--text); color: var(--bg); font-weight: 600; }
+    #years button { font-size: 20px; }
+    #days button { padding: 4px 0; }
+    #time { width: min(100%, 1116px); margin-top: 16px; accent-color: var(--muted); }
   </style>
 </head>
 <body>
@@ -22,6 +31,64 @@
       <h1>Recordings</h1>
     </nav>
   </header>
-  <main></main>
+  <main id="picker">
+    <div id="years" class="row" role="group" aria-label="Year"></div>
+    <div id="months" class="row" role="group" aria-label="Month"></div>
+    <div id="days" class="row" role="group" aria-label="Day"></div>
+    <input id="time" type="range" min="0" max="1439" value="0" aria-label="Time of day">
+  </main>
+
+  <script>
+    const now = new Date();
+    const today = { year: now.getFullYear(), month: now.getMonth(), day: now.getDate() };
+    const selected = { ...today };
+
+    // A placeholder until the years come from the available video.
+    const years = [today.year - 2, today.year - 1, today.year];
+    const monthFormat = new Intl.DateTimeFormat(undefined, { month: 'short' });
+    const months = Array.from({ length: 12 }, (_, month) => month);
+    const days = Array.from({ length: 31 }, (_, index) => index + 1);
+
+    function buildRow(rowId, values, field, label) {
+      const buttons = new Map(values.map((value) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label(value);
+        button.addEventListener('click', () => {
+          selected[field] = value;
+          render();
+        });
+        return [value, button];
+      }));
+      document.getElementById(rowId).append(...buttons.values());
+      return buttons;
+    }
+
+    const yearButtons = buildRow('years', years, 'year', (year) => year);
+    const monthButtons = buildRow('months', months, 'month', (month) => monthFormat.format(new Date(2000, month, 1)));
+    const dayButtons = buildRow('days', days, 'day', (day) => day);
+
+    function render() {
+      const lastDay = new Date(selected.year, selected.month + 1, 0).getDate();
+      // Going from Jan 31 to February lands on the last day of February.
+      selected.day = Math.min(selected.day, lastDay);
+
+      for (const [year, button] of yearButtons) {
+        button.setAttribute('aria-pressed', year === selected.year);
+      }
+      for (const [month, button] of monthButtons) {
+        button.setAttribute('aria-pressed', month === selected.month);
+      }
+      for (const [day, button] of dayButtons) {
+        button.hidden = day > lastDay;
+        button.setAttribute('aria-pressed', day === selected.day);
+        const isToday = selected.year === today.year && selected.month === today.month && day === today.day;
+        button.toggleAttribute('aria-current', isToday);
+        if (isToday) button.setAttribute('aria-current', 'date');
+      }
+    }
+
+    render();
+  </script>
 </body>
 </html>
