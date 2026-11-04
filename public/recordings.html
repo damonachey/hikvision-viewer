@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Recordings</title>
   <style>
-    :root { color-scheme: dark; --bg: #111418; --line: #2c333b; --text: #e8ebee; --muted: #98a2ad; }
+    :root { color-scheme: dark; --bg: #111418; --card: #1b2026; --line: #2c333b; --text: #e8ebee; --muted: #98a2ad; --bad: #ff8a80; }
     * { box-sizing: border-box; }
     body { display: flex; flex-direction: column; min-height: 100vh; margin: 0; padding: 16px; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
     header { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
@@ -13,6 +13,11 @@
     h1 { margin: 0; font-size: 20px; }
     nav a { color: var(--muted); font-size: 20px; font-weight: 600; text-decoration: none; }
     nav a:hover { color: var(--text); }
+    summary { display: flex; align-items: center; justify-content: center; width: 39px; height: 39px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); cursor: pointer; list-style: none; }
+    summary::-webkit-details-marker { display: none; }
+    #camera-list { position: absolute; top: 100%; right: 0; z-index: 1; width: 240px; max-width: 100%; max-height: 60vh; margin-top: 4px; padding: 6px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+    #camera-list label { display: flex; align-items: center; gap: 8px; padding: 6px; color: var(--text); font-size: 14px; cursor: pointer; }
+    #camera-list .offline { margin-left: auto; color: var(--muted); font-size: 12px; }
     #picker { display: flex; flex-direction: column; align-items: center; gap: 8px; }
     .row { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
     .row button { min-width: 32px; padding: 4px 8px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--muted); font: inherit; cursor: pointer; }
@@ -22,6 +27,12 @@
     #years button { font-size: 20px; }
     #days button { padding: 4px 0; }
     #time { width: min(100%, 1116px); margin-top: 16px; accent-color: var(--muted); }
+    #error { margin-top: 16px; color: var(--bad); }
+    #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 452px), 1fr)); gap: 12px; margin-top: 16px; }
+    .camera { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+    .frame { aspect-ratio: 16 / 9; background: #000; }
+    .caption { padding: 8px 10px; }
+    .name { display: block; overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
   </style>
 </head>
 <body>
@@ -30,13 +41,32 @@
       <a href="/">Live</a>
       <h1>Recordings</h1>
     </nav>
+    <details id="camera-menu">
+      <summary aria-label="Choose cameras" title="Choose cameras">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </summary>
+      <div id="camera-list"></div>
+    </details>
   </header>
-  <main id="picker">
-    <div id="years" class="row" role="group" aria-label="Year"></div>
-    <div id="months" class="row" role="group" aria-label="Month"></div>
-    <div id="days" class="row" role="group" aria-label="Day"></div>
-    <input id="time" type="range" min="0" max="1439" value="0" aria-label="Time of day">
+  <main>
+    <div id="picker">
+      <div id="years" class="row" role="group" aria-label="Year"></div>
+      <div id="months" class="row" role="group" aria-label="Month"></div>
+      <div id="days" class="row" role="group" aria-label="Day"></div>
+      <input id="time" type="range" min="0" max="1439" value="0" aria-label="Time of day">
+    </div>
+    <div id="error" hidden></div>
+    <div id="grid"></div>
   </main>
+  <template id="camera-template">
+    <article class="camera">
+      <div class="frame"></div>
+      <div class="caption"><span class="name"></span></div>
+    </article>
+  </template>
 
   <script>
     const now = new Date();
@@ -88,7 +118,73 @@
       }
     }
 
+    const HIDDEN_KEY = 'hiddenRecordingCameras';
+    const cameraMenu = document.getElementById('camera-menu');
+    const cameraList = document.getElementById('camera-list');
+    const hiddenCameras = readHiddenCameras();
+
+    // Saves the hidden cameras rather than the shown ones, so new cameras appear by default.
+    function readHiddenCameras() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(HIDDEN_KEY));
+        return new Set(Array.isArray(saved) ? saved : []);
+      } catch {
+        return new Set();
+      }
+    }
+
+    function setCameraShown(camera, card, shown) {
+      if (shown) hiddenCameras.delete(camera.id);
+      else hiddenCameras.add(camera.id);
+      try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hiddenCameras])); } catch {}
+      card.hidden = !shown;
+    }
+
+    function addCameraOption(camera, card) {
+      const label = document.createElement('label');
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = !hiddenCameras.has(camera.id);
+      checkbox.addEventListener('change', () => setCameraShown(camera, card, checkbox.checked));
+      label.append(checkbox, camera.name);
+      if (camera.online === false) {
+        const offline = document.createElement('span');
+        offline.className = 'offline';
+        offline.textContent = 'offline';
+        label.append(offline);
+      }
+      cameraList.append(label);
+    }
+
+    async function loadCameras() {
+      const grid = document.getElementById('grid');
+      const errorBox = document.getElementById('error');
+      const template = document.getElementById('camera-template');
+      try {
+        const res = await fetch('/api/cameras');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        grid.replaceChildren(...data.cameras.map((camera) => {
+          const card = template.content.firstElementChild.cloneNode(true);
+          const name = card.querySelector('.name');
+          name.textContent = camera.name;
+          name.title = camera.name;
+          card.hidden = hiddenCameras.has(camera.id);
+          addCameraOption(camera, card);
+          return card;
+        }));
+      } catch (err) {
+        errorBox.textContent = err.message;
+        errorBox.hidden = false;
+      }
+    }
+
+    document.addEventListener('click', (event) => {
+      if (!cameraMenu.contains(event.target)) cameraMenu.open = false;
+    });
+
     render();
+    loadCameras();
   </script>
 </body>
 </html>

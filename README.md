@@ -51,7 +51,7 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 
 ## Using the Live page
 
-- The links at the top of the page switch between **Live** and **Recordings**. The **Recordings** page is empty for now.
+- The links at the top of the page switch between **Live** and **Recordings**. The **Recordings** page isn't connected to any video yet, and its gear button keeps a separate list of cameras from this page's.
 - The gear button lets you tick which cameras to show. Hidden cameras aren't requested from the NVR, and new cameras appear by default.
 - **Refresh** gets new snapshots from every shown camera.
 - The list next to **Refresh** sets the auto refresh, which repeats that every 1, 5, 30 or 60 seconds. A refresh is skipped if the last one is still loading, the tab is in the background or a full-size view is open.
