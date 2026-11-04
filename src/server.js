@@ -18,7 +18,10 @@ const nvr = createNvrClient({
   rtspPort: Number(NVR_RTSP_PORT),
 });
 
-const indexPage = new URL('../public/index.html', import.meta.url);
+const pages = new Map([
+  ['/', new URL('../public/index.html', import.meta.url)],
+  ['/recordings', new URL('../public/recordings.html', import.meta.url)],
+]);
 
 function sendJson(res, status, data) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -30,9 +33,9 @@ async function handle(req, res) {
 
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
 
-  if (pathname === '/') {
+  if (pages.has(pathname)) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    return res.end(await readFile(indexPage));
+    return res.end(await readFile(pages.get(pathname)));
   }
 
   if (pathname === '/api/cameras') {

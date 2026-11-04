@@ -49,8 +49,9 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 | `HOST` | No | `127.0.0.1` | Address the app listens on |
 | `PORT` | No | `3000` | Port the app listens on (`.env.example` sets `9999`) |
 
-## Using the page
+## Using the Live page
 
+- The links at the top of the page switch between **Live** and **Recordings**. The **Recordings** page is empty for now.
 - The gear button lets you tick which cameras to show. Hidden cameras aren't requested from the NVR, and new cameras appear by default.
 - **Refresh** gets new snapshots from every shown camera.
 - The list next to **Refresh** sets the auto refresh, which repeats that every 1, 5, 30 or 60 seconds. A refresh is skipped if the last one is still loading, the tab is in the background or a full-size view is open.
@@ -131,7 +132,8 @@ To update it, run `git pull` and `npm ci --omit=dev` in `/opt/hikvision-viewer`,
 | `src/nvr.js` | NVR client: digest auth, camera list and snapshots |
 | `src/live.js` | Live video: runs FFmpeg and sends its output over WebSockets |
 | `src/server.js` | Config, routes and the web server |
-| `public/index.html` | The camera grid page |
+| `public/index.html` | The Live page: the camera grid |
+| `public/recordings.html` | The Recordings page |
 | `deploy/hikvision-viewer.openrc` | Service file for Alpine Linux |
 
 ## License

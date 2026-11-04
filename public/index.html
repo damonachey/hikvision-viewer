@@ -3,13 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cameras</title>
+  <title>Live</title>
   <style>
     :root { color-scheme: dark; --bg: #111418; --card: #1b2026; --line: #2c333b; --text: #e8ebee; --muted: #98a2ad; --bad: #ff8a80; }
     * { box-sizing: border-box; }
     body { display: flex; flex-direction: column; min-height: 100vh; margin: 0; padding: 16px; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
     header { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
-    h1 { margin: 0 auto 0 0; font-size: 20px; }
+    nav { display: flex; align-items: baseline; gap: 16px; margin-right: auto; }
+    h1 { margin: 0; font-size: 20px; }
+    nav a { color: var(--muted); font-size: 20px; font-weight: 600; text-decoration: none; }
+    nav a:hover { color: var(--text); }
     #status { margin-top: 16px; color: var(--muted); font-size: 13px; }
     label { color: var(--muted); font-size: 13px; }
     button, select { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
@@ -47,7 +50,10 @@
 </head>
 <body>
   <header>
-    <h1>Cameras</h1>
+    <nav>
+      <h1>Live</h1>
+      <a href="/recordings">Recordings</a>
+    </nav>
     <select id="interval" aria-label="Auto refresh">
       <option value="live">Live</option>
       <option value="1">1 second</option>
