@@ -8,6 +8,9 @@ const STREAM_SUFFIXES = { main: '01', sub: '02' };
 const MAX_STREAMS = 16;
 const STALL_TIMEOUT_MS = 20_000;
 const MAX_CLIENT_BACKLOG_BYTES = 32 * 1024 * 1024;
+// A viewer that sleeps or loses its network never closes its socket, and FFmpeg
+// would keep pulling from the NVR, so one missed answer ends the stream.
+const PING_INTERVAL_MS = 15_000;
 
 function ffmpegArgs(rtspUrl) {
   return [
@@ -89,6 +92,16 @@ function streamCamera(socket, nvr, cameraId, streamSuffix, activeStreams) {
   };
   resetStallTimer();
 
+  let answeredPing = true;
+  socket.on('pong', () => {
+    answeredPing = true;
+  });
+  const pingTimer = setInterval(() => {
+    if (!answeredPing) return socket.terminate();
+    answeredPing = false;
+    socket.ping();
+  }, PING_INTERVAL_MS);
+
   ffmpeg.stdout.on('data', (chunk) => {
     resetStallTimer();
     if (socket.readyState !== socket.OPEN) return;
@@ -139,7 +152,10 @@ function streamCamera(socket, nvr, cameraId, streamSuffix, activeStreams) {
     failStream(socket, 'The video stream ended');
   });
 
-  socket.on('close', () => ffmpeg.kill());
+  socket.on('close', () => {
+    clearInterval(pingTimer);
+    ffmpeg.kill();
+  });
   socket.on('error', () => ffmpeg.kill());
 }
 
