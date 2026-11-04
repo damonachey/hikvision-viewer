@@ -82,6 +82,40 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 | Live view stays on "Reconnecting…" | Check that RTSP is enabled on the NVR, that `NVR_RTSP_PORT` is right, and that your firewall allows UDP video to reach FFmpeg. The server log has the reason. |
 | Live view is choppy or falls behind | Video travels over UDP, so check for packet loss between this machine and the NVR, and close other apps that are viewing its cameras. |
 
+## Running as a service on Alpine
+
+These steps run the app on Alpine Linux, such as in a Proxmox LXC container. The container needs its own address on the same network as the NVR, because live video arrives as UDP. Don't put it behind NAT, and allow UDP from the NVR if a firewall is on.
+
+1. Install the app as root:
+
+   ```sh
+   apk add nodejs npm ffmpeg git
+   git clone https://github.com/damonachey/hikvision-viewer.git /opt/hikvision-viewer
+   cd /opt/hikvision-viewer
+   npm ci --omit=dev
+   ```
+
+2. Create a user to run it, and its config. Set `HOST=0.0.0.0` in `.env` so other machines can connect, and read the Security section first:
+
+   ```sh
+   addgroup -S hikvision
+   adduser -S -D -H -G hikvision hikvision
+   cp .env.example .env
+   chown root:hikvision .env
+   chmod 640 .env
+   ```
+
+3. Start the service, and start it on boot:
+
+   ```sh
+   cp deploy/hikvision-viewer.openrc /etc/init.d/hikvision-viewer
+   chmod +x /etc/init.d/hikvision-viewer
+   rc-update add hikvision-viewer default
+   rc-service hikvision-viewer start
+   ```
+
+To update it, run `git pull` and `npm ci --omit=dev` in `/opt/hikvision-viewer`, then `rc-service hikvision-viewer restart`. Logs are in `/var/log/hikvision-viewer.log`.
+
 ## API
 
 | Endpoint | Returns |
@@ -98,3 +132,8 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 | `src/live.js` | Live video: runs FFmpeg and sends its output over WebSockets |
 | `src/server.js` | Config, routes and the web server |
 | `public/index.html` | The camera grid page |
+| `deploy/hikvision-viewer.openrc` | Service file for Alpine Linux |
+
+## License
+
+[MIT](LICENSE)

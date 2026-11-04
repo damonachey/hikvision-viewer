@@ -1,0 +1,20 @@
+#!/sbin/openrc-run
+
+name="hikvision-viewer"
+description="Hikvision camera viewer"
+supervisor="supervise-daemon"
+directory="/opt/hikvision-viewer"
+command="/usr/bin/node"
+command_args="--env-file=.env src/server.js"
+command_user="hikvision:hikvision"
+output_log="/var/log/hikvision-viewer.log"
+error_log="/var/log/hikvision-viewer.log"
+respawn_delay=5
+
+depend() {
+	need net
+}
+
+start_pre() {
+	checkpath --file --owner hikvision:hikvision --mode 0640 "$output_log"
+}
