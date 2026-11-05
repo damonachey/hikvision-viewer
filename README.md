@@ -1,16 +1,16 @@
 # Hikvision Camera Viewer
 
-A small local web app that shows snapshots from the cameras on a Hikvision NVR, with live video in the tiles or full size.
+A small local web app that shows snapshots from the cameras on a Hikvision NVR, with live video in the tiles or full size, and plays back their recordings.
 
-A Node server logs in to the NVR and passes the images and video to a single web page, so your NVR credentials never reach the browser. Snapshots use the NVR's ISAPI interface, and live video uses RTSP through FFmpeg.
+A Node server logs in to the NVR and passes the images and video to a single web page, so your NVR credentials never reach the browser. Snapshots, recording lists and thumbnail downloads use the NVR's ISAPI interface, and live video and playback use RTSP through FFmpeg.
 
 ## Requirements
 
 - Node.js 22.9 or newer
-- [FFmpeg](https://ffmpeg.org/) on your `PATH`, for live video
+- [FFmpeg](https://ffmpeg.org/) on your `PATH`, for video and thumbnails
 - A Hikvision NVR reachable from this machine, with ISAPI and RTSP enabled
 - An NVR account that is allowed to view the cameras
-- Cameras set to H.264, for live video
+- Cameras set to H.264, for video
 
 ## Setup
 
@@ -44,11 +44,11 @@ Settings live in `.env`, which git ignores. Settings with a default are commente
 | `NVR_URL` | Yes | | Address of the NVR, such as `http://192.168.1.64` |
 | `NVR_USER` | Yes | | NVR username |
 | `NVR_PASSWORD` | Yes | | NVR password |
-| `NVR_RTSP_PORT` | No | `554` | RTSP port on the NVR, used for live video |
+| `NVR_RTSP_PORT` | No | `554` | RTSP port on the NVR, used for video |
 | `NVR_ALLOW_SELF_SIGNED` | No | `false` | Set to `true` if `NVR_URL` is `https` and the NVR uses a self-signed certificate |
 | `HOST` | No | `127.0.0.1` | Address the app listens on |
 | `PORT` | No | `3000` | Port the app listens on |
-| `CACHE_DIR` | No | `cache` | Folder for remembered NVR answers, which the app must be able to write to |
+| `CACHE_DIR` | No | `cache` | Folder for remembered NVR answers and thumbnails, which the app must be able to write to |
 | `CACHE_YEARS_HOURS` | No | `24` | How long to remember whether a past year has video. `0` turns this cache off. |
 | `CACHE_MONTHS_HOURS` | No | `24` | How long to remember whether another month has video. `0` turns this cache off. |
 | `CACHE_DAYS_HOURS` | No | `24` | How long to remember which days of another month have video. `0` turns this cache off. |
@@ -57,10 +57,7 @@ Settings live in `.env`, which git ignores. Settings with a default are commente
 
 ## Using the Live page
 
-- The links at the top of the page switch between **Live** and **Recordings**. The **Recordings** page can't play video yet. Its rows show the last 10 years, then the selected year's months, then the selected month's days, all brighter where the ticked cameras have video. Under them, each ticked camera has a band showing when it recorded that day, with one bar across all the bands that you drag to pick a time. The clip under the bar, or else the next one after it, is green, and each tile shows a thumbnail for it, or black if there's none.
-- Opening a day makes 480×270 thumbnails, one at a time, by downloading just the start of each file. A clip gets its own unless it starts less than five minutes after the last clip that did, in which case it shares that one. Each camera's first and last come first, then the gaps are split in half repeatedly, with the cameras taking turns, so the whole day fills in gradually. Until a day is finished, a tile shows the nearest thumbnail so far. They're kept in `thumbnails` in `CACHE_DIR`, aren't removed by **Clear cached queries**, and are never deleted automatically. **Clear cached thumbnails** under the gear button deletes all of them, and the day being viewed then starts building again. **Cache info** there shows how much space the cache is using.
-- Each tile has one button that switches between play and pause. Play works when the camera's band has a green clip. It plays from the bar if the bar is inside that clip, or else from the start of the next clip, then carries on through that camera's later clips. The NVR plays one camera at a time, so playing another camera stops the first. Moving the bar stops playback. Its gear button keeps a separate list of cameras from this page's.
-- The server saves each answer in `query-cache.json` in `CACHE_DIR` to spare the NVR, including across restarts. New video can take as long as the matching `CACHE_` setting to show. **Clear cached queries** under the **Recordings** page's gear button asks the NVR again.
+- The links at the top of each page switch between **Live** and **Recordings**.
 - The gear button lets you tick which cameras to show. Hidden cameras aren't requested from the NVR, and new cameras appear by default.
 - **Refresh** gets new snapshots from every shown camera.
 - The list next to **Refresh** sets the auto refresh, which repeats that every 1, 5, 30 or 60 seconds. A refresh is skipped if the last one is still loading, the tab is in the background or a full-size view is open.
@@ -72,11 +69,21 @@ Settings live in `.env`, which git ignores. Settings with a default are commente
 - The pop-out icon on a tile opens that camera directly in its own window, using the page's auto refresh setting. The tile stays on the page.
 - Each browser remembers its own camera and auto refresh choices, and clearing its site data resets them.
 
+## Using the Recordings page
+
+- The rows show the last 10 years, then the selected year's months, then the selected month's days, all brighter where the ticked cameras have video. Under them, each ticked camera has a band showing when it recorded that day, with one bar across all the bands that you drag to pick a time. The clip under the bar, or else the next one after it, is green, and each tile shows a thumbnail for it, or black if there's none.
+- Opening a day makes 480×270 thumbnails, one at a time, by downloading just the start of each file. A clip gets its own unless it starts less than five minutes after the last clip that did, in which case it shares that one. Each camera's first and last come first, then the gaps are split in half repeatedly, with the cameras taking turns, so the whole day fills in gradually. Until a day is finished, a tile shows the nearest thumbnail so far. They're kept in `thumbnails` in `CACHE_DIR`, aren't removed by **Clear cached queries**, and are never deleted automatically. **Clear cached thumbnails** under the gear button deletes all of them, and the day being viewed then starts building again. **Cache info** there shows how much space the cache is using.
+- Move the mouse over a tile and click its play button to play that camera in a popup. It works when the camera's band has a green clip. It plays from the bar if the bar is inside that clip, or else from the start of the next clip, then carries on through that camera's later clips. The popup has its own play and pause button, and the bar follows the video, so it stays where you stopped when you close the popup.
+- The pop-out button under a tile, or the one in the popup, plays that camera in its own window instead. Press Esc to close the window.
+- The NVR plays one recording at a time, so there's only one pop-out window, and playing another camera there replaces the first. A popup won't start while that window is playing.
+- The gear button keeps its own list of cameras, separate from the **Live** page's, and each browser remembers it. Thumbnails are made for every camera, ticked or not, so ticking one later shows its thumbnails straight away.
+- The server saves each answer in `query-cache.json` in `CACHE_DIR` to spare the NVR, including across restarts. New video can take as long as the matching `CACHE_` setting to show. **Clear cached queries** under the gear button asks the NVR again.
+
 ## Security
 
 - **The app has no login.** Anyone who can reach it can see your cameras, so it only listens on `127.0.0.1` by default. Add a login before setting `HOST` to anything else.
 - **Failed logins can lock the NVR account.** Hikvision locks accounts after repeated failures, so the app stops trying after one rejected password. Fix `.env` and restart to try again.
-- **The password is briefly visible to local programs.** FFmpeg needs it in the RTSP address, so other programs on this machine can see it while a live view is open.
+- **The password is briefly visible to local programs.** FFmpeg needs it in the RTSP address, so other programs on this machine can see it while video is playing.
 - **Use a separate account if you can.** A low-privilege NVR user limits the damage if the password is exposed.
 
 ## Troubleshooting
@@ -87,19 +94,23 @@ Settings live in `.env`, which git ignores. Settings with a default are commente
 | "The NVR rejected the username or password" | Fix `.env` and restart. The NVR may also have locked the account, so wait for the lock to clear first. |
 | "Could not reach the NVR" | Check `NVR_URL` and that this machine can reach the NVR |
 | Cameras are missing | Check the list under the gear button. Only IP camera channels are listed, so analog channels on a hybrid recorder won't appear. |
-| "Camera offline" or "Snapshot failed" | Check the camera's status on the NVR and that the account is allowed to view it |
+| "Camera offline" or "Snapshot failed" | Check the camera's status on the NVR and that the account is allowed to view it. After the NVR reboots, snapshots can fail for 10 minutes or more, then recover by themselves. |
 | "FFmpeg is not installed on the server" | Install FFmpeg, make sure it's on your `PATH`, and restart the app |
 | Live view stays on "Reconnecting…" | Check that RTSP is enabled on the NVR, that `NVR_RTSP_PORT` is right, and that your firewall allows UDP video to reach FFmpeg. The server log has the reason. |
+| "Could not play this camera" | The NVR plays one recording at a time and can be slow to free up, so the app retries for several seconds. Stop any other playback, such as another tab or the NVR's own app, and try again. If it stays busy, rebooting the NVR has cleared it. |
+| "thumbnails could not be made" or "Stopped making thumbnails after repeated failures" | The server log has the reason for each one. Opening the day again retries the missing ones. |
 | Live view is choppy or falls behind | Video travels over UDP, so check for packet loss between this machine and the NVR, and close other apps that are viewing its cameras. |
 
 ## Running as a service on Alpine
 
-These steps run the app on Alpine Linux, such as in a Proxmox LXC container. The container needs its own address on the same network as the NVR, because live video arrives as UDP. Don't put it behind NAT, and allow UDP from the NVR if a firewall is on.
+These steps run the app on Alpine Linux, such as in a Proxmox LXC container. The container needs its own address on the same network as the NVR, because video arrives as UDP. Don't put it behind NAT, and allow UDP from the NVR if a firewall is on.
 
-1. Install the app as root:
+1. Install the app as root, and set the time zone to the NVR's, replacing `America/Denver` with yours. Otherwise the app and the NVR's recorded times can disagree on which day is today:
 
    ```sh
-   apk add nodejs npm ffmpeg git
+   apk add nodejs npm ffmpeg git tzdata
+   cp /usr/share/zoneinfo/America/Denver /etc/localtime
+   echo America/Denver > /etc/timezone
    git clone https://github.com/damonachey/hikvision-viewer.git /opt/hikvision-viewer
    cd /opt/hikvision-viewer
    npm ci --omit=dev
@@ -149,8 +160,8 @@ To update it, run `sh deploy/update.sh` as root in `/opt/hikvision-viewer`. It g
 
 | Path | Purpose |
 |---|---|
-| `src/nvr.js` | NVR client: digest auth, camera list and snapshots |
-| `src/live.js` | Live video: runs FFmpeg and sends its output over WebSockets |
+| `src/nvr.js` | NVR client: digest auth, camera list, snapshots, recording searches and downloads |
+| `src/video.js` | Live video and playback: runs FFmpeg and sends its output over WebSockets |
 | `src/thumbnails.js` | Makes a thumbnail from the start of each clip |
 | `src/cache.js` | Saves NVR answers to a JSON file, for a set time per type of data |
 | `src/server.js` | Config, routes and the web server |

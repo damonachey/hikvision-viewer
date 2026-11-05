@@ -48,7 +48,7 @@ From `GET /ISAPI/ContentMgmt/search/profile` (tested):
     <startTime>2026-11-03T00:00:00Z</startTime>
     <endTime>2026-11-03T23:59:59Z</endTime>
   </timeSpan></timeSpanList>
-  <maxResults>40</maxResults>
+  <maxResults>64</maxResults>
   <searchResultPostion>0</searchResultPostion>
   <metadataList><metadataDescriptor>//recordType.meta.std-cgi.com</metadataDescriptor></metadataList>
 </CMSearchDescription>
@@ -77,7 +77,7 @@ Returns each day with a `record` value of `true` or `false`. It doesn't distingu
 
 ## Time zones
 
-Times are written with a `Z`, but on this NVR they're local time. A frame requested for `15:39:27Z` showed `15:39:26` on the camera's local on-screen clock (tested). Don't convert them.
+Times are written with a `Z`, but on this NVR they're local time. A frame requested for `15:39:27Z` showed `15:39:26` on the camera's local on-screen clock (tested). Don't convert them. The times listed for a clip can also be a few seconds off from its video (tested).
 
 ## Playback
 
@@ -87,6 +87,7 @@ rtsp://<user>:<password>@<nvr>:554/Streaming/tracks/101?starttime=20261103T15392
 
 - **Tested:** FFmpeg plays this at normal speed, and a frame arrives within a second of the requested time. It also accepts a range spanning several recordings.
 - **Tested:** use no slash before `?`. The address in search results has one, and using it unchanged made the NVR answer FFmpeg's `SETUP` with a 401, which could count toward an account lockout. The guide's examples put the track control after the query string, which may be related.
+- **Tested:** only one recording can play at a time, and a second gets `453 Not Enough Bandwidth`. Live streams and downloads can still run alongside it. The slot can stay busy for several seconds after a stream ends, and it once stayed stuck until the NVR was rebooted.
 - **Tested:** `/Streaming/tracks/102` returns HTTP 400, and `record/tracks/102` returns 403, so this NVR appears to record only main streams.
 - **Guide:** the guide's own path is `/ISAPI/Streaming/tracks/<id>`, with `endtime` optional. Without it, the stream runs until the session ends.
 - **Guide:** a session supports RTSP `PAUSE`, `Range: clock=...` and `Scale` for faster playback, with 2× and 4× in the examples. Seeking within an open session could be faster than reconnecting, but it's untested. FFmpeg's command line doesn't control this.
@@ -102,21 +103,50 @@ rtsp://<user>:<password>@<nvr>:554/Streaming/tracks/101?starttime=20261103T15392
 | `POST /ISAPI/ContentMgmt/search` on a picture track (`103`) | Community code uses `+3` for stored pictures. The guide calls `3` the third stream. On this NVR it returns HTTP 403. | Tested |
 | `pictureSearchType` | This NVR lists only `vehicleDetection`, so it looks limited to event pictures. | Tested |
 
-The working method (tested) is to open playback with FFmpeg, keep the first frame and disconnect. It takes about 1.9 seconds per frame on a quiet NVR.
+Two methods work (tested). Both keep the first frame and hang up:
+
+- **From a download:** only gives the frame at the start of a file, but it doesn't need the one playback slot. This project uses it for thumbnails.
+- **From playback:** works for any time, but needs the playback slot. It takes about 1.9 seconds per frame on a quiet NVR, or about 0.65 seconds with FFmpeg's `-probesize 32768 -analyzeduration 0`. `-fflags nobuffer` timed out.
+
+After an NVR reboot, `picture` returned HTTP 500 for over 12 minutes, then recovered with no change (tested).
 
 Also, `isSupportSnapshot` reports `false` on this NVR even though snapshots work, so don't rely on the capability lists alone.
 
 ## Downloading
 
-- **Guide:** `GET /ISAPI/ContentMgmt/download`, with a `downloadRequest` body holding a `playbackURI`, returns a file.
-  ```xml
-  <downloadRequest version="1.0" xmlns="http://www.isapi.org/ver20/XMLSchema">
-    <playbackURI>rtsp://<nvr>/Streaming/tracks/101?starttime=...&amp;endtime=...&amp;name=...&amp;size=...</playbackURI>
-  </downloadRequest>
-  ```
-  Include `name` and `size` to download by file, or only the times to download by time. The guide's reference shows `GET`, but community code uses `POST`.
-- **Tested:** `GET /ISAPI/ContentMgmt/download/capabilities` returned HTTP 400 on this NVR, so support is unconfirmed. Forum users report errors from this endpoint too.
-- **Untested:** whether a download is faster than playback, or what file format it returns. Downloading could be a faster way to fetch clips, but each file can be large.
+`GET /ISAPI/ContentMgmt/download`, with a `downloadRequest` body holding a search result's `playbackURI`, returns the file:
+
+```xml
+<downloadRequest version="1.0" xmlns="http://www.isapi.org/ver20/XMLSchema">
+  <playbackURI>rtsp://<nvr>/Streaming/tracks/101?starttime=...&amp;endtime=...&amp;name=...&amp;size=...</playbackURI>
+</downloadRequest>
+```
+
+Tested behaviour:
+
+- It's a `GET` with a body, as in the guide's reference. Community code uses `POST`.
+- It only returns a whole named file from its start. Range and time requests are ignored or rejected, but hanging up early works, so the start of a file is quick to get.
+- The format is MPEG-PS.
+- Speed is about 70–80 Mbit/s for one download, and about 93 Mbit/s in total for three at once.
+- Downloads can overlap playback and live streams.
+- `GET /ISAPI/ContentMgmt/download/capabilities` returns HTTP 400 even though downloads work.
+
+## Motion detection
+
+| Request | Purpose | Status |
+|---|---|---|
+| `GET /ISAPI/ContentMgmt/InputProxy/channels/<id>/video/motionDetection`, and the same with `/layout` | A camera's motion settings, including sensitivity and the grid of watched cells | Tested |
+| `GET /ISAPI/System/Video/inputs/channels/<id>/motionDetection` | Returns an error on this NVR, so use the addresses above | Tested |
+
+Sensitivity is 1–5 on the NVR, and 3 shows as 60 on the camera. Changes made through the NVR reached Cameras 1–5 (tested).
+
+## NVR and camera settings
+
+All tested:
+
+- The NVR's readings of a camera's main-stream settings can disagree with the camera. The camera's settings are the ones it records with.
+- Quality uses different scales: 20, 30, 45, 60, 75, 90 on the NVR, and 1, 20, 40, 60, 80, 100 on the camera.
+- Cameras on firmware V5.3.6 refused stream setting changes with `500 Device Error`, even from the camera's own web page.
 
 ## Other useful read-only calls
 

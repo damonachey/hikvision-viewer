@@ -64,7 +64,11 @@ async function saveFirstFrame(nvr, playbackUri, file) {
     ], { stdio: ['pipe', 'ignore', 'pipe'], windowsHide: true });
     let stderr = '';
     let bytes = 0;
-    const timer = setTimeout(() => ffmpeg.kill(), GRAB_TIMEOUT_MS);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      ffmpeg.kill();
+    }, GRAB_TIMEOUT_MS);
 
     ffmpeg.stderr.on('data', (chunk) => {
       stderr = (stderr + chunk).slice(-1000);
@@ -86,7 +90,7 @@ async function saveFirstFrame(nvr, playbackUri, file) {
     ffmpeg.on('close', (code) => {
       clearTimeout(timer);
       download.abort();
-      resolve({ ok: code === 0, error: stderr.trim(), bytes });
+      resolve({ ok: code === 0, error: timedOut ? 'Timed out waiting for the first frame' : stderr.trim(), bytes });
     });
   });
 }

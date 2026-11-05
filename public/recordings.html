@@ -72,8 +72,27 @@
     .caption button { display: flex; flex: none; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); cursor: pointer; }
     .caption button:hover:not(:disabled) { border-color: var(--muted); }
     .caption button:disabled { color: var(--dim); cursor: default; }
-    .tile-play .pause-icon, .tile-play.playing .play-icon { display: none; }
-    .tile-play.playing .pause-icon { display: block; }
+    .tile-media { position: relative; }
+    .tile-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; width: 100%; padding: 0; border: 0; background: rgba(0, 0, 0, .3); color: #fff; opacity: 0; cursor: pointer; }
+    .tile-overlay:disabled { display: none; }
+    .tile-media:hover .tile-overlay, .tile-overlay:focus-visible { opacity: 1; }
+    /* Without a mouse there's no hover, so always show it. */
+    @media (hover: none) { .tile-overlay { background: none; opacity: 1; } }
+    .tile-overlay span { display: flex; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 50%; background: rgba(0, 0, 0, .65); }
+    #full-view { width: min(1600px, calc(100vw - 32px)); max-width: none; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
+    #full-view::backdrop { background: rgba(0, 0, 0, .8); }
+    .full-header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 10px; }
+    .full-header button { display: flex; align-items: center; justify-content: center; min-width: 39px; height: 39px; padding: 0 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
+    .full-header button:hover:not(:disabled) { border-color: var(--muted); }
+    .full-header button:disabled { color: var(--dim); cursor: default; }
+    #full-play, #full-popout { padding: 0; }
+    #full-time { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+    #full-play .pause-icon, #full-play.playing .play-icon { display: none; }
+    #full-play.playing .pause-icon { display: block; }
+    #full-frame { width: 100%; height: auto; max-height: calc(100vh - 110px); }
+    body.popout > header, body.popout #picker, body.popout #grid, body.popout #full-popout, body.popout #full-close { display: none; }
+    body.popout #full-view[open] { display: flex; flex-direction: column; width: 100vw; height: 100vh; max-height: none; margin: 0; border: 0; border-radius: 0; }
+    body.popout #full-frame { flex: 1; min-height: 0; aspect-ratio: auto; max-height: none; }
   </style>
 </head>
 <body>
@@ -125,16 +144,44 @@
   </dialog>
   <template id="camera-template">
     <article class="camera">
-      <div class="frame"></div>
+      <div class="tile-media">
+        <div class="frame"></div>
+        <button class="tile-overlay" type="button" disabled>
+          <span><svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 3v18l15-9z"/></svg></span>
+        </button>
+      </div>
       <div class="caption">
         <span class="name"></span>
-        <button class="tile-play" type="button" disabled>
-          <svg class="play-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 3v18l15-9z"/></svg>
-          <svg class="pause-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 3h5v18H5zM14 3h5v18h-5z"/></svg>
+        <button class="tile-popout" type="button" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M15 3h6v6"/>
+            <path d="M10 14 21 3"/>
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+            <path d="M7 11v6l5-3z" fill="currentColor" stroke-width="1"/>
+          </svg>
         </button>
       </div>
     </article>
   </template>
+  <dialog id="full-view">
+    <div class="full-header">
+      <span id="full-name" class="name"></span>
+      <span id="full-time"></span>
+      <button id="full-play" type="button">
+        <svg class="play-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 3v18l15-9z"/></svg>
+        <svg class="pause-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 3h5v18H5zM14 3h5v18h-5z"/></svg>
+      </button>
+      <button id="full-popout" type="button" aria-label="Pop out to a new window" title="Pop out to a new window">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15 3h6v6"/>
+          <path d="M10 14 21 3"/>
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+        </svg>
+      </button>
+      <button id="full-close" type="button">Close</button>
+    </div>
+    <div id="full-frame" class="frame"></div>
+  </dialog>
 
   <script>
     const now = new Date();
@@ -157,7 +204,6 @@
           selected[field] = value;
           render();
           if (changed) {
-            stopPlayback();
             thumbnailStarts = {};
             onChange?.();
           }
@@ -210,19 +256,10 @@
     const HIDDEN_KEY = 'hiddenRecordingCameras';
     const VIDEO_ROWS_DELAY_MS = 300;
     const CLEARED_MESSAGE_MS = 2000;
-    const clearCacheButton = document.getElementById('clear-cache');
-    const clearCacheLabel = clearCacheButton.textContent;
-    const cameraMenu = document.getElementById('camera-menu');
-    const cameraList = document.getElementById('camera-list');
-    const errorBox = document.getElementById('error');
-    const hiddenCameras = readHiddenCameras();
-    let cameras = [];
     const SECONDS_PER_DAY = 24 * 60 * 60;
     const SCALE_HOURS = [0, 3, 6, 9, 12, 15, 18, 21, 24];
-    const bands = document.getElementById('bands');
-    const timelineBody = document.getElementById('timeline-body');
-    const timelineScale = document.getElementById('timeline-scale');
-    const latestRowRequest = {};
+    const THUMBNAIL_POLL_MS = 2000;
+    const THUMBNAIL_SECONDS = 5 * 60;
     const TICK_MS = 200;
     const GAP_TOLERANCE_SECONDS = 0.15;
     // More new video than this at once means the stream jumped over a gap.
@@ -238,10 +275,26 @@
     const CLIP_TIME_ERROR_SECONDS = 6;
     // Removing video also removes frames up to the next keyframe, so keep plenty behind.
     const KEEP_BEHIND_SECONDS = 30;
+
+    const clearCacheButton = document.getElementById('clear-cache');
+    const clearCacheLabel = clearCacheButton.textContent;
+    const cameraMenu = document.getElementById('camera-menu');
+    const cameraList = document.getElementById('camera-list');
+    const errorBox = document.getElementById('error');
+    const bands = document.getElementById('bands');
+    const timelineBody = document.getElementById('timeline-body');
+    const timelineScale = document.getElementById('timeline-scale');
+    const fullView = document.getElementById('full-view');
+    const fullFrame = document.getElementById('full-frame');
+    const fullPlay = document.getElementById('full-play');
+    const pageParams = new URLSearchParams(location.search);
+    const popoutCameraId = pageParams.get('camera');
+
+    const hiddenCameras = readHiddenCameras();
+    const latestRowRequest = {};
+    let cameras = [];
     let playback = null;
-    const THUMBNAIL_POLL_MS = 2000;
-    const THUMBNAIL_SECONDS = 5 * 60;
-    let videoCamera = null;
+    let fullCamera = null;
     let thumbnailStarts = {};
     let thumbnailsBuilding = false;
     let thumbnailTimer;
@@ -264,7 +317,6 @@
       else hiddenCameras.add(camera.id);
       try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hiddenCameras])); } catch {}
       card.hidden = !shown;
-      if (playback?.camera === camera) stopPlayback();
       showBands(bandRecordings);
       // Wait in case more cameras are about to change, since each load searches every year and month.
       clearTimeout(videoRowsTimer);
@@ -279,8 +331,12 @@
       }
     }
 
+    function shownCameras() {
+      return cameras.filter((camera) => !hiddenCameras.has(camera.id));
+    }
+
     function shownCameraIds() {
-      return cameras.filter((camera) => !hiddenCameras.has(camera.id)).map((camera) => camera.id).join(',');
+      return shownCameras().map((camera) => camera.id).join(',');
     }
 
     async function loadRow(row, url, show) {
@@ -341,8 +397,7 @@
 
     function showBands(recordings) {
       bandRecordings = recordings;
-      const shown = cameras.filter((camera) => !hiddenCameras.has(camera.id));
-      bands.replaceChildren(...shown.map((camera) => {
+      bands.replaceChildren(...shownCameras().map((camera) => {
         const row = document.createElement('div');
         row.className = 'band-row';
         const name = document.createElement('span');
@@ -370,7 +425,7 @@
       return (bandRecordings[camera.id] ?? []).findIndex(({ end }) => end > timelineSeconds);
     }
 
-    // Turns each band's current clip green and shows its thumbnail. Play is only allowed
+    // Turns each band's current clip green and shows its thumbnail. Playing is only allowed
     // for the cameras that have one.
     function markCurrentClips() {
       for (const camera of cameras) {
@@ -378,7 +433,8 @@
         const clips = bands.querySelector(`[data-camera="${camera.id}"]`);
         clips?.querySelector('.current')?.classList.remove('current');
         clips?.children[index]?.classList.add('current');
-        if (camera.playButton) camera.playButton.disabled = index === -1;
+        if (camera.overlayButton) camera.overlayButton.disabled = index === -1;
+        if (camera.popoutButton) camera.popoutButton.disabled = index === -1;
         showClipThumbnail(camera, bandRecordings[camera.id]?.[index]);
       }
     }
@@ -394,8 +450,7 @@
     }
 
     function showClipThumbnail(camera, clip) {
-      // This tile's video, playing or paused, stays until the bar is moved.
-      if (!camera.frame || camera === videoCamera) return;
+      if (!camera.frame) return;
       const start = clip && thumbnailFor(camera, clip);
       if (start === undefined) {
         camera.frame.replaceChildren();
@@ -440,6 +495,14 @@
       }
     }
 
+    function showCleared(button, label) {
+      button.textContent = 'Cleared';
+      setTimeout(() => {
+        button.textContent = label;
+        button.disabled = false;
+      }, CLEARED_MESSAGE_MS);
+    }
+
     // The day being viewed starts building again straight away.
     async function clearThumbnails() {
       const button = document.getElementById('clear-thumbnails');
@@ -452,11 +515,7 @@
         thumbnailStarts = {};
         markCurrentClips();
         await loadThumbnails();
-        button.textContent = 'Cleared';
-        setTimeout(() => {
-          button.textContent = label;
-          button.disabled = false;
-        }, CLEARED_MESSAGE_MS);
+        showCleared(button, label);
       } catch (err) {
         showThumbnailError(err);
         button.textContent = label;
@@ -537,6 +596,7 @@
       timelineBody.setAttribute('aria-valuenow', timelineSeconds);
       timelineBody.setAttribute('aria-valuetext', text);
       document.getElementById('timeline-time').textContent = text;
+      document.getElementById('full-time').textContent = `${selectedDate()} ${text}`;
       markCurrentClips();
     }
 
@@ -556,7 +616,7 @@
       const socket = new WebSocket(`${protocol}//${location.host}/api/cameras/${camera.id}/recording?start=${start}`);
       const queue = [];
       const gaps = [];
-      const { frame } = camera;
+      const frame = fullFrame;
       let video, sourceBuffer, tickTimer;
       let stopped = false;
       let failed = false;
@@ -665,7 +725,6 @@
       if (!keepFrame) showMessage('Connecting…');
 
       return {
-        camera,
         stop() {
           stopped = true;
           clearInterval(tickTimer);
@@ -688,27 +747,23 @@
     }
 
     function playFrom(camera, seconds, keepFrame = false, attempt = 0) {
-      stopPlayback({ keepFrame });
-      videoCamera = camera;
+      stopPlayback();
       setTime(seconds);
-      playback = {
-        camera,
-        ...playRecording(camera, Math.floor(seconds), {
-          keepFrame: keepFrame || attempt > 0,
-          onFailed: (canRetry) => {
-            if (canRetry && attempt < PLAY_RETRIES) {
-              playback.retryTimer = setTimeout(() => playFrom(camera, seconds, true, attempt + 1), PLAY_RETRY_MS * (attempt + 1));
-              return;
-            }
-            if (canRetry && !camera.frame.querySelector('video')) {
-              camera.frame.className = 'frame failed';
-              camera.frame.textContent = 'Could not play this camera';
-            }
-            stopPlayback({ keepFrame: true });
-          },
-          onQuiet: (position) => resumeAfterQuiet(camera, position),
-        }),
-      };
+      playback = playRecording(camera, Math.floor(seconds), {
+        keepFrame: keepFrame || attempt > 0,
+        onFailed: (canRetry) => {
+          if (canRetry && attempt < PLAY_RETRIES) {
+            playback.retryTimer = setTimeout(() => playFrom(camera, seconds, true, attempt + 1), PLAY_RETRY_MS * (attempt + 1));
+            return;
+          }
+          if (canRetry && !fullFrame.querySelector('video')) {
+            fullFrame.className = 'frame failed';
+            fullFrame.textContent = 'Could not play this camera';
+          }
+          stopPlayback();
+        },
+        onQuiet: (position) => resumeAfterQuiet(camera, position),
+      });
       showPlaybackState();
     }
 
@@ -717,30 +772,66 @@
       const recordings = bandRecordings[camera.id] ?? [];
       const stillInClip = recordings.some(({ start, end }) => start <= position && end - position > CLIP_TIME_ERROR_SECONDS);
       const next = recordings.find(({ start }) => start > position + 1);
-      if (!stillInClip && !next) return stopPlayback({ keepFrame: true });
+      if (!stillInClip && !next) return stopPlayback();
       playFrom(camera, stillInClip ? position : next.start, true);
     }
 
-    function stopPlayback({ keepFrame = false } = {}) {
+    // The last frame stays on screen, so this also works as pause.
+    function stopPlayback() {
       clearTimeout(playback?.retryTimer);
       playback?.stop();
       playback = null;
-      if (!keepFrame && videoCamera) {
-        videoCamera.frame.replaceChildren();
-        videoCamera.frame.className = 'frame';
-        videoCamera = null;
-        markCurrentClips();
-      }
       showPlaybackState();
     }
 
     function showPlaybackState() {
-      for (const camera of cameras) {
-        if (!camera.playButton) continue;
-        const isPlaying = playback?.camera === camera;
-        camera.playButton.classList.toggle('playing', isPlaying);
-        camera.playButton.title = `${isPlaying ? 'Pause' : 'Play'} ${camera.name}`;
-        camera.playButton.setAttribute('aria-label', camera.playButton.title);
+      fullPlay.classList.toggle('playing', Boolean(playback));
+      fullPlay.title = playback ? 'Pause' : 'Play';
+      fullPlay.setAttribute('aria-label', fullPlay.title);
+      fullPlay.disabled = !playback && (!fullCamera || currentClipIndex(fullCamera) === -1);
+    }
+
+    function openPlayer(camera) {
+      fullCamera = camera;
+      document.getElementById('full-name').textContent = camera.name;
+      fullFrame.replaceChildren();
+      fullView.showModal();
+      startPlayback(camera);
+    }
+
+    // Plays from the bar's time in its own window. It's the same window every time, because
+    // the NVR plays one recording at a time.
+    function popOut(camera) {
+      const url = `/recordings?camera=${camera.id}&date=${selectedDate()}&time=${timelineSeconds}`;
+      const size = `left=0,top=0,width=${screen.availWidth},height=${screen.availHeight}`;
+      const popup = window.open(url, 'recording', `popup,${size}`);
+      popup?.focus();
+      return popup;
+    }
+
+    // The page opened by a pop-out button: one camera filling the window, with no tiles.
+    async function startPopout() {
+      document.body.classList.add('popout');
+      const [year, month, day] = (pageParams.get('date') ?? '').split('-').map(Number);
+      selected.year = year;
+      selected.month = month - 1;
+      selected.day = day;
+      try {
+        const camerasRes = await fetch('/api/cameras');
+        const camerasData = await camerasRes.json();
+        if (!camerasRes.ok) throw new Error(camerasData.error);
+        const camera = camerasData.cameras.find(({ id }) => id === popoutCameraId);
+        if (!camera) throw new Error(`Camera ${popoutCameraId} was not found`);
+        const listRes = await fetch(`/api/recordings/list?cameras=${camera.id}&year=${year}&month=${month}&day=${day}`);
+        const listData = await listRes.json();
+        if (!listRes.ok) throw new Error(listData.error);
+        bandRecordings = listData.cameras;
+        document.title = camera.name;
+        setTime(Number(pageParams.get('time')));
+        openPlayer(camera);
+      } catch (err) {
+        errorBox.textContent = err.message;
+        errorBox.hidden = false;
       }
     }
 
@@ -757,7 +848,6 @@
       };
       if (!Object.hasOwn(moves, event.key)) return;
       event.preventDefault();
-      stopPlayback();
       setTime(moves[event.key]);
     }
 
@@ -791,16 +881,18 @@
           name.textContent = camera.name;
           name.title = camera.name;
           camera.frame = card.querySelector('.frame');
-          camera.playButton = card.querySelector('.tile-play');
-          camera.playButton.addEventListener('click', () => {
-            if (playback?.camera === camera) stopPlayback({ keepFrame: true });
-            else startPlayback(camera);
-          });
+          camera.overlayButton = card.querySelector('.tile-overlay');
+          camera.overlayButton.title = `Play ${camera.name}`;
+          camera.overlayButton.setAttribute('aria-label', camera.overlayButton.title);
+          camera.overlayButton.addEventListener('click', () => openPlayer(camera));
+          camera.popoutButton = card.querySelector('.tile-popout');
+          camera.popoutButton.title = `Play ${camera.name} in a new window`;
+          camera.popoutButton.setAttribute('aria-label', camera.popoutButton.title);
+          camera.popoutButton.addEventListener('click', () => popOut(camera));
           card.hidden = hiddenCameras.has(camera.id);
           addCameraOption(camera, card);
           return card;
         }));
-        showPlaybackState();
         await loadVideoRows();
       } catch (err) {
         errorBox.textContent = err.message;
@@ -814,11 +906,7 @@
         const res = await fetch('/api/cache', { method: 'DELETE' });
         if (!res.ok) throw new Error((await res.json()).error);
         await loadVideoRows();
-        clearCacheButton.textContent = 'Cleared';
-        setTimeout(() => {
-          clearCacheButton.textContent = clearCacheLabel;
-          clearCacheButton.disabled = false;
-        }, CLEARED_MESSAGE_MS);
+        showCleared(clearCacheButton, clearCacheLabel);
       } catch (err) {
         errorBox.textContent = err.message;
         errorBox.hidden = false;
@@ -836,6 +924,32 @@
     document.getElementById('cache-dialog').addEventListener('click', (event) => {
       if (event.target === event.currentTarget) event.currentTarget.close();
     });
+    fullPlay.addEventListener('click', () => {
+      if (playback) stopPlayback();
+      else startPlayback(fullCamera);
+    });
+    document.getElementById('full-close').addEventListener('click', () => fullView.close());
+    document.getElementById('full-popout').addEventListener('click', () => {
+      // Keep the view open if the browser blocked the new window.
+      if (popOut(fullCamera)) fullView.close();
+    });
+    fullView.addEventListener('click', (event) => {
+      if (event.target === fullView && !popoutCameraId) fullView.close();
+    });
+    // Esc closes the whole popped-out window. The browser can skip the cancel event, so
+    // the close listener below handles this too.
+    fullView.addEventListener('cancel', (event) => {
+      if (!popoutCameraId) return;
+      event.preventDefault();
+      window.close();
+    });
+    fullView.addEventListener('close', () => {
+      if (popoutCameraId) return window.close();
+      fullCamera = null;
+      stopPlayback();
+      fullFrame.replaceChildren();
+      fullFrame.className = 'frame';
+    });
     timelineScale.append(...SCALE_HOURS.map((hour) => {
       const label = document.createElement('span');
       label.textContent = hour;
@@ -843,7 +957,6 @@
       return label;
     }));
     timelineBody.addEventListener('pointerdown', (event) => {
-      stopPlayback();
       timelineBody.setPointerCapture(event.pointerId);
       setTimeFromPointer(event);
     });
@@ -857,7 +970,8 @@
     showWithVideo(monthButtons, []);
     showWithVideo(dayButtons, []);
     render();
-    loadCameras();
+    if (popoutCameraId) startPopout();
+    else loadCameras();
   </script>
 </body>
 </html>

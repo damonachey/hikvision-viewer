@@ -2,9 +2,9 @@ import { readFile, stat, statfs } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { createCache } from './cache.js';
-import { attachLiveStreams } from './live.js';
 import { createNvrClient, NvrError } from './nvr.js';
 import { createThumbnailBuilder } from './thumbnails.js';
+import { attachVideoStreams } from './video.js';
 
 const { NVR_URL, NVR_USER, NVR_PASSWORD, NVR_ALLOW_SELF_SIGNED, NVR_RTSP_PORT = '554', HOST = '127.0.0.1', PORT = '3000', CACHE_DIR = 'cache', CACHE_YEARS_HOURS = '24', CACHE_MONTHS_HOURS = '24', CACHE_DAYS_HOURS = '24', CACHE_RECORDINGS_HOURS = '24', CACHE_TODAY_MINUTES = '5' } = process.env;
 
@@ -34,6 +34,9 @@ const nvr = createNvrClient({
 });
 
 const YEARS_BACK = 10;
+const YEAR_ERROR = `year must be within the last ${YEARS_BACK} years`;
+const MONTH_ERROR = 'month must be from 1 to 12';
+const DAY_ERROR = 'day must be from 1 to 31';
 
 const queryCache = createCache({
   file: path.join(CACHE_DIR, 'query-cache.json'),
@@ -144,6 +147,14 @@ function isValidYear(text) {
   return /^\d{4}$/.test(text) && Number(text) >= lastYear - YEARS_BACK && Number(text) <= lastYear;
 }
 
+function isValidMonth(text) {
+  return /^(1[0-2]|[1-9])$/.test(text ?? '');
+}
+
+function isValidDay(text) {
+  return /^([1-9]|[12]\d|3[01])$/.test(text ?? '');
+}
+
 async function cacheInfo() {
   const queryFile = await stat(path.join(CACHE_DIR, 'query-cache.json')).catch(() => null);
   const disk = await statfs(CACHE_DIR).catch(() => null);
@@ -175,9 +186,9 @@ async function handle(req, res) {
     const year = searchParams.get('year');
     const month = searchParams.get('month');
     const day = searchParams.get('day');
-    if (!isValidYear(year)) return sendJson(res, 400, { error: `year must be within the last ${YEARS_BACK} years` });
-    if (!/^(1[0-2]|[1-9])$/.test(month ?? '')) return sendJson(res, 400, { error: 'month must be from 1 to 12' });
-    if (!/^([1-9]|[12]\d|3[01])$/.test(day ?? '')) return sendJson(res, 400, { error: 'day must be from 1 to 31' });
+    if (!isValidYear(year)) return sendJson(res, 400, { error: YEAR_ERROR });
+    if (!isValidMonth(month)) return sendJson(res, 400, { error: MONTH_ERROR });
+    if (!isValidDay(day)) return sendJson(res, 400, { error: DAY_ERROR });
     return sendJson(res, 200, thumbnails.start(Number(year), Number(month), Number(day)));
   }
 
@@ -227,21 +238,21 @@ async function handle(req, res) {
     }
 
     const year = searchParams.get('year');
-    if (!isValidYear(year)) return sendJson(res, 400, { error: `year must be within the last ${YEARS_BACK} years` });
+    if (!isValidYear(year)) return sendJson(res, 400, { error: YEAR_ERROR });
 
     if (pathname === '/api/recordings/months') {
       return sendJson(res, 200, { months: cameras ? await monthsWithRecordings(cameraIds, Number(year)) : [] });
     }
 
     const month = searchParams.get('month');
-    if (!/^(1[0-2]|[1-9])$/.test(month ?? '')) return sendJson(res, 400, { error: 'month must be from 1 to 12' });
+    if (!isValidMonth(month)) return sendJson(res, 400, { error: MONTH_ERROR });
 
     if (pathname === '/api/recordings/days') {
       return sendJson(res, 200, { days: cameras ? await daysWithRecordings(cameraIds, Number(year), Number(month)) : [] });
     }
 
     const day = searchParams.get('day');
-    if (!/^([1-9]|[12]\d|3[01])$/.test(day ?? '')) return sendJson(res, 400, { error: 'day must be from 1 to 31' });
+    if (!isValidDay(day)) return sendJson(res, 400, { error: DAY_ERROR });
     const recordings = cameras ? await recordingsOnDay(cameraIds, Number(year), Number(month), Number(day)) : {};
     // The playback address is only for the server, and it reveals where the NVR is.
     const list = Object.fromEntries(Object.entries(recordings).map(([id, clips]) => [id, clips.map(({ playbackUri, ...clip }) => clip)]));
@@ -260,7 +271,7 @@ const server = http.createServer((req, res) => {
   });
 });
 
-attachLiveStreams(server, nvr);
+attachVideoStreams(server, nvr);
 
 server.listen(Number(PORT), HOST, () => {
   console.log(`Camera viewer running at http://${HOST}:${PORT}`);

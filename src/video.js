@@ -159,7 +159,7 @@ function streamCamera(socket, nvr, cameraId, rtspUrl, activeStreams) {
   socket.on('error', () => ffmpeg.kill());
 }
 
-export function attachLiveStreams(server, nvr) {
+export function attachVideoStreams(server, nvr) {
   const wss = new WebSocketServer({ noServer: true });
   const activeStreams = new Set();
 
