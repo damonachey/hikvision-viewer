@@ -75,6 +75,20 @@ function xmlValue(xml, tag) {
     .replaceAll('&amp;', '&');
 }
 
+// Asks for one main-stream recording from any of the cameras, which is enough to show the year has video.
+function recordingSearch(cameraIds, year) {
+  const tracks = cameraIds.map((id) => `<trackID>${id}01</trackID>`).join('');
+  return `<?xml version="1.0" encoding="utf-8"?>
+<CMSearchDescription>
+  <searchID>${crypto.randomUUID()}</searchID>
+  <trackList>${tracks}</trackList>
+  <timeSpanList><timeSpan><startTime>${year}-01-01T00:00:00Z</startTime><endTime>${year}-12-31T23:59:59Z</endTime></timeSpan></timeSpanList>
+  <maxResults>1</maxResults>
+  <searchResultPostion>0</searchResultPostion>
+  <metadataList><metadataDescriptor>//recordType.meta.std-cgi.com</metadataDescriptor></metadataList>
+</CMSearchDescription>`;
+}
+
 export function createNvrClient({ url, user, password, allowSelfSigned = false, rtspPort = 554 }) {
   const base = new URL(url);
   const transport = base.protocol === 'https:' ? https : http;
@@ -100,14 +114,19 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
     }
   }
 
-  function send(path, authorization) {
+  function send(method, path, body, authorization) {
     return new Promise((resolve, reject) => {
       const target = new URL(path, base);
+      const headers = authorization ? { Authorization: authorization } : {};
+      if (body) {
+        headers['Content-Type'] = 'application/xml';
+        headers['Content-Length'] = Buffer.byteLength(body);
+      }
       const req = transport.request(
         target,
         {
-          method: 'GET',
-          headers: authorization ? { Authorization: authorization } : {},
+          method,
+          headers,
           timeout: REQUEST_TIMEOUT_MS,
           rejectUnauthorized: !allowSelfSigned,
         },
@@ -122,20 +141,21 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
       );
       req.on('timeout', () => req.destroy(new Error('timed out')));
       req.on('error', reject);
-      req.end();
+      req.end(body);
     });
   }
 
-  async function authedGet(path) {
+  async function authedRequest(path, body) {
     if (credentialsRejected) throw new NvrError(CREDENTIALS_MESSAGE, 503);
 
+    const method = body ? 'POST' : 'GET';
     try {
-      let res = await send(path);
+      let res = await send(method, path, body);
       if (res.status === 401) {
         const challenge = parseChallenge(res.headers['www-authenticate']);
         if (!challenge) throw new NvrError('The NVR did not offer a supported digest login.');
 
-        res = await send(path, digestHeader(challenge, { method: 'GET', uri: path, user, password }));
+        res = await send(method, path, body, digestHeader(challenge, { method, uri: path, user, password }));
         if (res.status === 401) {
           credentialsRejected = true;
           throw new NvrError(CREDENTIALS_MESSAGE, 503);
@@ -162,9 +182,9 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
 
     async listCameras() {
       // Sequential so a wrong password costs one failed login, not two.
-      const channels = await withSlot(() => authedGet('/ISAPI/ContentMgmt/InputProxy/channels'));
+      const channels = await withSlot(() => authedRequest('/ISAPI/ContentMgmt/InputProxy/channels'));
       // Status only adds the online flag, so the list still works without it.
-      const statuses = await withSlot(() => authedGet('/ISAPI/ContentMgmt/InputProxy/channels/status')).catch(() => null);
+      const statuses = await withSlot(() => authedRequest('/ISAPI/ContentMgmt/InputProxy/channels/status')).catch(() => null);
 
       const online = new Map();
       if (statuses) {
@@ -186,15 +206,25 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
       if (full) {
         // Without a size the NVR sends 704x576. It may still send less than the size
         // requested: a DS-7608N-E2/8P returns 1920x1080 for a 2560x1440 camera.
-        const settings = (await withSlot(() => authedGet(stream))).body.toString();
+        const settings = (await withSlot(() => authedRequest(stream))).body.toString();
         query = `?videoResolutionWidth=${xmlValue(settings, 'videoResolutionWidth')}&videoResolutionHeight=${xmlValue(settings, 'videoResolutionHeight')}`;
       }
-      const res = await withSlot(() => authedGet(`${stream}/picture${query}`));
+      const res = await withSlot(() => authedRequest(`${stream}/picture${query}`));
       const contentType = res.headers['content-type'] ?? '';
       if (!contentType.startsWith('image/')) {
         throw new NvrError(`The NVR did not return an image for camera ${cameraId}`);
       }
       return { contentType, body: res.body };
+    },
+
+    async yearsWithRecordings(cameraIds, firstYear, lastYear) {
+      const years = [];
+      // Sequential so a wrong password costs one failed login, not one per year.
+      for (let year = firstYear; year <= lastYear; year++) {
+        const res = await withSlot(() => authedRequest('/ISAPI/ContentMgmt/search', recordingSearch(cameraIds, year)));
+        if (Number(xmlValue(res.body.toString(), 'numOfMatches')) > 0) years.push(year);
+      }
+      return years;
     },
   };
 }

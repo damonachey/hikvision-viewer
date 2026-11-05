@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Recordings</title>
   <style>
-    :root { color-scheme: dark; --bg: #111418; --card: #1b2026; --line: #2c333b; --text: #e8ebee; --muted: #98a2ad; --bad: #ff8a80; }
+    :root { color-scheme: dark; --bg: #111418; --card: #1b2026; --line: #2c333b; --text: #e8ebee; --muted: #98a2ad; --dim: #59626c; --bad: #ff8a80; }
     * { box-sizing: border-box; }
     body { display: flex; flex-direction: column; min-height: 100vh; margin: 0; padding: 16px; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
     header { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
@@ -21,6 +21,8 @@
     #picker { display: flex; flex-direction: column; align-items: center; gap: 8px; }
     .row { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
     .row button { min-width: 32px; padding: 4px 8px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--muted); font: inherit; cursor: pointer; }
+    .row button.no-video { color: var(--dim); }
+    .row button.has-video { color: var(--text); }
     .row button:hover { border-color: var(--line); color: var(--text); }
     .row button[aria-current="date"] { border-color: var(--muted); }
     .row button[aria-pressed="true"] { background: var(--text); color: var(--bg); font-weight: 600; }
@@ -73,8 +75,8 @@
     const today = { year: now.getFullYear(), month: now.getMonth(), day: now.getDate() };
     const selected = { ...today };
 
-    // A placeholder until the years come from the available video.
-    const years = [today.year - 2, today.year - 1, today.year];
+    const YEARS_BACK = 10;
+    const years = Array.from({ length: YEARS_BACK + 1 }, (_, index) => today.year - YEARS_BACK + index);
     const monthFormat = new Intl.DateTimeFormat(undefined, { month: 'short' });
     const months = Array.from({ length: 12 }, (_, month) => month);
     const days = Array.from({ length: 31 }, (_, index) => index + 1);
@@ -119,9 +121,14 @@
     }
 
     const HIDDEN_KEY = 'hiddenRecordingCameras';
+    const YEARS_DELAY_MS = 300;
     const cameraMenu = document.getElementById('camera-menu');
     const cameraList = document.getElementById('camera-list');
+    const errorBox = document.getElementById('error');
     const hiddenCameras = readHiddenCameras();
+    let cameras = [];
+    let yearsTimer;
+    let yearsRequest = 0;
 
     // Saves the hidden cameras rather than the shown ones, so new cameras appear by default.
     function readHiddenCameras() {
@@ -138,6 +145,35 @@
       else hiddenCameras.add(camera.id);
       try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hiddenCameras])); } catch {}
       card.hidden = !shown;
+      // Wait in case more cameras are about to change, since each load searches every year.
+      clearTimeout(yearsTimer);
+      yearsTimer = setTimeout(loadYears, YEARS_DELAY_MS);
+    }
+
+    function showYearsWithVideo(yearsWithVideo) {
+      for (const [year, button] of yearButtons) {
+        const hasVideo = yearsWithVideo.includes(year);
+        button.classList.toggle('has-video', hasVideo);
+        button.classList.toggle('no-video', !hasVideo);
+      }
+    }
+
+    async function loadYears() {
+      const request = ++yearsRequest;
+      const shown = cameras.filter((camera) => !hiddenCameras.has(camera.id));
+      try {
+        const res = await fetch(`/api/recordings/years?cameras=${shown.map((camera) => camera.id).join(',')}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        // A newer load has started, so this answer is for the wrong cameras.
+        if (request !== yearsRequest) return;
+        errorBox.hidden = true;
+        showYearsWithVideo(data.years);
+      } catch (err) {
+        if (request !== yearsRequest) return;
+        errorBox.textContent = err.message;
+        errorBox.hidden = false;
+      }
     }
 
     function addCameraOption(camera, card) {
@@ -158,13 +194,13 @@
 
     async function loadCameras() {
       const grid = document.getElementById('grid');
-      const errorBox = document.getElementById('error');
       const template = document.getElementById('camera-template');
       try {
         const res = await fetch('/api/cameras');
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
-        grid.replaceChildren(...data.cameras.map((camera) => {
+        cameras = data.cameras;
+        grid.replaceChildren(...cameras.map((camera) => {
           const card = template.content.firstElementChild.cloneNode(true);
           const name = card.querySelector('.name');
           name.textContent = camera.name;
@@ -173,6 +209,7 @@
           addCameraOption(camera, card);
           return card;
         }));
+        await loadYears();
       } catch (err) {
         errorBox.textContent = err.message;
         errorBox.hidden = false;
@@ -183,6 +220,7 @@
       if (!cameraMenu.contains(event.target)) cameraMenu.open = false;
     });
 
+    showYearsWithVideo([]);
     render();
     loadCameras();
   </script>

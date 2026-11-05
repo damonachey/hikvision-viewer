@@ -18,6 +18,8 @@ const nvr = createNvrClient({
   rtspPort: Number(NVR_RTSP_PORT),
 });
 
+const YEARS_BACK = 10;
+
 const pages = new Map([
   ['/', new URL('../public/index.html', import.meta.url)],
   ['/recordings', new URL('../public/recordings.html', import.meta.url)],
@@ -47,6 +49,14 @@ async function handle(req, res) {
     const { contentType, body } = await nvr.snapshot(snapshotRoute[1], { full: searchParams.get('full') === '1' });
     res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'no-store' });
     return res.end(body);
+  }
+
+  if (pathname === '/api/recordings/years') {
+    const cameras = searchParams.get('cameras') ?? '';
+    if (!/^(\d+(,\d+)*)?$/.test(cameras)) return sendJson(res, 400, { error: 'cameras must be a list of camera ids' });
+    if (!cameras) return sendJson(res, 200, { years: [] });
+    const lastYear = new Date().getFullYear();
+    return sendJson(res, 200, { years: await nvr.yearsWithRecordings(cameras.split(','), lastYear - YEARS_BACK, lastYear) });
   }
 
   sendJson(res, 404, { error: 'Not found' });
