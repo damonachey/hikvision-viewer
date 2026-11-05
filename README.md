@@ -2,7 +2,7 @@
 
 A small local web app that shows snapshots from the cameras on a Hikvision NVR, with live video in the tiles or full size, and plays back their recordings.
 
-A Node server logs in to the NVR and passes the images and video to a single web page, so your NVR credentials never reach the browser. Snapshots, recording lists and thumbnail downloads use the NVR's ISAPI interface, and live video and playback use RTSP through FFmpeg.
+A Node server logs in to the NVR and passes the images and video to a single web page, so your NVR credentials never reach the browser. Snapshots, recording lists and thumbnail downloads use the NVR's ISAPI interface, and live video and playback use RTSP through FFmpeg. Playback faster than normal speed uses downloads instead.
 
 <p>
   <img src="docs/images/live.png" alt="The Live page, showing a grid of cameras" width="55.9%" align="top">
@@ -80,7 +80,10 @@ Settings live in `.env`, which git ignores. Settings with a default are commente
 - Opening a day makes 480×270 thumbnails, one at a time, by downloading just the start of each file. A clip gets its own unless it starts less than five minutes after the last clip that did, in which case it shares that one. Each camera's first and last come first, then the gaps are split in half repeatedly, with the cameras taking turns, so the whole day fills in gradually. Until a day is finished, a tile shows the nearest thumbnail so far. They're kept in `thumbnails` in `CACHE_DIR`, aren't removed by **Clear cached queries**, and are never deleted automatically. **Clear cached thumbnails** under the gear button deletes all of them, and the day being viewed then starts building again. **Cache info** there shows how much space the cache is using.
 - Move the mouse over a tile and click its play button to play that camera in a popup. It works when the camera's band has a green clip. It plays from the bar if the bar is inside that clip, or else from the start of the next clip, then carries on through that camera's later clips. The popup has its own play and pause button, and the bar follows the video, so it stays where you stopped when you close the popup.
 - The pop-out button under a tile, or the one in the popup, plays that camera in its own window instead. Press Esc to close the window.
-- The NVR plays one recording at a time, so there's only one pop-out window, and playing another camera there replaces the first. A popup won't start while that window is playing.
+- The popup and the window both have a speed menu, from 0.5× to 8×, and a progress bar for the current clip. Click or drag the bar to move within the clip.
+- The NVR only streams recordings at normal speed, so 2× and above use downloads, which arrive about 10 times faster than normal speed. A download always starts at the start of its clip, so starting or moving far into a long clip at those speeds can take a while: about 7 to 10 seconds for a point 1.5 minutes in. Changing between 1× or slower and 2× or faster reconnects, which can take up to about 20 seconds if the NVR is still busy with the last stream.
+- The NVR plays one recording at a time at 1× or slower, so there's only one pop-out window, and playing another camera there replaces the first. A popup won't start at those speeds while that window is playing.
+- A browser extension that controls video speed can override the speed menu.
 - The gear button keeps its own list of cameras, separate from the **Live** page's, and each browser remembers it. Thumbnails are made for every camera, ticked or not, so ticking one later shows its thumbnails straight away.
 - The server saves each answer in `query-cache.json` in `CACHE_DIR` to spare the NVR, including across restarts. New video can take as long as the matching `CACHE_` setting to show. **Clear cached queries** under the gear button asks the NVR again.
 
@@ -166,7 +169,7 @@ To update it, run `sh deploy/update.sh` as root in `/opt/hikvision-viewer`. It g
 | Path | Purpose |
 |---|---|
 | `src/nvr.js` | NVR client: digest auth, camera list, snapshots, recording searches and downloads |
-| `src/video.js` | Live video and playback: runs FFmpeg and sends its output over WebSockets |
+| `src/video.js` | Live video and playback: runs FFmpeg and sends its output over WebSockets, or over HTTP for fast playback |
 | `src/thumbnails.js` | Makes a thumbnail from the start of each clip |
 | `src/cache.js` | Saves NVR answers to a JSON file, for a set time per type of data |
 | `src/server.js` | Config, routes and the web server |

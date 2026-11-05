@@ -130,6 +130,8 @@ Tested behaviour:
 - Speed is about 70–80 Mbit/s for one download, and about 93 Mbit/s in total for three at once.
 - Downloads can overlap playback and live streams.
 - `GET /ISAPI/ContentMgmt/download/capabilities` returns HTTP 400 even though downloads work.
+- A clip's first bytes arrive in about 25 ms. FFmpeg can copy the video into fragmented MP4 as it arrives, at about 11× normal speed for 4 Mbit/s video. This project uses that for playback above 1×, reading past the unwanted part to start mid-clip.
+- A clip's video can run a few seconds longer than its listed times, such as 18.8 seconds for a clip listed as 16.
 
 ## Motion detection
 

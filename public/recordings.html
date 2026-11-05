@@ -89,7 +89,13 @@
     #full-time { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
     #full-play .pause-icon, #full-play.playing .play-icon { display: none; }
     #full-play.playing .pause-icon { display: block; }
-    #full-frame { width: 100%; height: auto; max-height: calc(100vh - 110px); }
+    #full-speed { height: 39px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
+    #full-speed:hover { border-color: var(--muted); }
+    #full-frame { width: 100%; height: auto; max-height: calc(100vh - 150px); }
+    #full-progress { display: flex; align-items: center; gap: 12px; padding: 8px 10px; }
+    #full-seek { flex: 1; min-width: 0; margin: 0; accent-color: var(--current-clip); cursor: pointer; }
+    #full-seek:disabled { cursor: default; }
+    #full-elapsed { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
     body.popout > header, body.popout #picker, body.popout #grid, body.popout #full-popout, body.popout #full-close { display: none; }
     body.popout #full-view[open] { display: flex; flex-direction: column; width: 100vw; height: 100vh; max-height: none; margin: 0; border: 0; border-radius: 0; }
     body.popout #full-frame { flex: 1; min-height: 0; aspect-ratio: auto; max-height: none; }
@@ -167,6 +173,13 @@
     <div class="full-header">
       <span id="full-name" class="name"></span>
       <span id="full-time"></span>
+      <select id="full-speed" aria-label="Playback speed" title="Playback speed">
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option>
+        <option value="2">2×</option>
+        <option value="4">4×</option>
+        <option value="8">8×</option>
+      </select>
       <button id="full-play" type="button">
         <svg class="play-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 3v18l15-9z"/></svg>
         <svg class="pause-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 3h5v18H5zM14 3h5v18h-5z"/></svg>
@@ -181,6 +194,10 @@
       <button id="full-close" type="button">Close</button>
     </div>
     <div id="full-frame" class="frame"></div>
+    <div id="full-progress">
+      <input id="full-seek" type="range" min="0" max="0" value="0" aria-label="Position in this clip" title="Position in this clip">
+      <span id="full-elapsed"></span>
+    </div>
   </dialog>
 
   <script>
@@ -275,6 +292,8 @@
     const CLIP_TIME_ERROR_SECONDS = 6;
     // Removing video also removes frames up to the next keyframe, so keep plenty behind.
     const KEEP_BEHIND_SECONDS = 30;
+    // How far past the player a download may run before waiting for it to catch up.
+    const READ_AHEAD_SECONDS = 60;
 
     const clearCacheButton = document.getElementById('clear-cache');
     const clearCacheLabel = clearCacheButton.textContent;
@@ -287,6 +306,8 @@
     const fullView = document.getElementById('full-view');
     const fullFrame = document.getElementById('full-frame');
     const fullPlay = document.getElementById('full-play');
+    const fullSpeed = document.getElementById('full-speed');
+    const fullSeek = document.getElementById('full-seek');
     const pageParams = new URLSearchParams(location.search);
     const popoutCameraId = pageParams.get('camera');
 
@@ -295,6 +316,8 @@
     let cameras = [];
     let playback = null;
     let fullCamera = null;
+    let playbackSpeed = 1;
+    let seeking = false;
     let thumbnailStarts = {};
     let thumbnailsBuilding = false;
     let thumbnailTimer;
@@ -598,6 +621,22 @@
       document.getElementById('timeline-time').textContent = text;
       document.getElementById('full-time').textContent = `${selectedDate()} ${text}`;
       markCurrentClips();
+      if (!seeking) showProgress();
+    }
+
+    // The bar covers the clip being played, since a whole day would hardly move.
+    function showProgress() {
+      const clip = fullCamera && bandRecordings[fullCamera.id]?.[currentClipIndex(fullCamera)];
+      fullSeek.disabled = !clip;
+      fullSeek.min = clip?.start ?? 0;
+      fullSeek.max = clip?.end ?? 0;
+      fullSeek.value = timelineSeconds;
+      showElapsed(clip);
+    }
+
+    function showElapsed(clip) {
+      const elapsed = clip ? Math.max(Number(fullSeek.value) - clip.start, 0) : 0;
+      document.getElementById('full-elapsed').textContent = clip ? `${formatTime(elapsed)} / ${formatTime(clip.end - clip.start)}` : '';
     }
 
     function selectedDate() {
@@ -609,6 +648,22 @@
       setTime(((event.clientX - left) / width) * SECONDS_PER_DAY);
     }
 
+    function showPlayerMessage(text, isFailure = false) {
+      fullFrame.className = isFailure ? 'frame failed' : 'frame';
+      fullFrame.textContent = text;
+    }
+
+    function createPlayerVideo(camera, mediaSource) {
+      const video = document.createElement('video');
+      video.muted = true;
+      video.playsInline = true;
+      // Setting the source resets playbackRate to this default.
+      video.defaultPlaybackRate = playbackSpeed;
+      video.setAttribute('aria-label', camera.name);
+      video.src = URL.createObjectURL(mediaSource);
+      return video;
+    }
+
     // Plays one camera's recordings from a time of day until stop() or the stream goes quiet.
     function playRecording(camera, startSeconds, { keepFrame, onQuiet, onFailed }) {
       const start = `${selectedDate().replaceAll('-', '')}T${formatTime(startSeconds).replaceAll(':', '')}`;
@@ -616,18 +671,12 @@
       const socket = new WebSocket(`${protocol}//${location.host}/api/cameras/${camera.id}/recording?start=${start}`);
       const queue = [];
       const gaps = [];
-      const frame = fullFrame;
       let video, sourceBuffer, tickTimer;
       let stopped = false;
       let failed = false;
       let bufferedEnd = 0;
       let lastPosition = 0;
       let quietSince = Date.now();
-
-      function showMessage(text, isFailure = false) {
-        frame.className = isFailure ? 'frame failed' : 'frame';
-        frame.textContent = text;
-      }
 
       function appendNext() {
         if (!sourceBuffer || sourceBuffer.updating || !queue.length) return;
@@ -653,16 +702,12 @@
         const type = `video/mp4; codecs="${codec}"`;
         if (!window.MediaSource || !MediaSource.isTypeSupported(type)) {
           failed = true;
-          showMessage("This browser can't play this video", true);
+          showPlayerMessage("This browser can't play this video", true);
           socket.close();
           return;
         }
         const mediaSource = new MediaSource();
-        video = document.createElement('video');
-        video.muted = true;
-        video.playsInline = true;
-        video.setAttribute('aria-label', camera.name);
-        video.src = URL.createObjectURL(mediaSource);
+        video = createPlayerVideo(camera, mediaSource);
         mediaSource.addEventListener('sourceopen', () => {
           URL.revokeObjectURL(video.src);
           if (stopped) return;
@@ -670,8 +715,8 @@
           sourceBuffer.addEventListener('updateend', onBufferUpdated);
           appendNext();
         }, { once: true });
-        frame.className = 'frame';
-        frame.replaceChildren(video);
+        fullFrame.className = 'frame';
+        fullFrame.replaceChildren(video);
         video.play().catch(() => {});
         tickTimer = setInterval(tick, TICK_MS);
       }
@@ -713,7 +758,7 @@
         if (message.type === 'init') startVideo(message.codec);
         else if (message.type === 'error' && message.fatal) {
           failed = true;
-          showMessage(message.message, true);
+          showPlayerMessage(message.message, true);
         }
       };
       // The NVR plays one recording at a time and can be slow to free up after the last one,
@@ -722,9 +767,12 @@
         if (stopped || video) return;
         onFailed(!failed);
       };
-      if (!keepFrame) showMessage('Connecting…');
+      if (!keepFrame) showPlayerMessage('Connecting…');
 
       return {
+        setSpeed(speed) {
+          if (video) video.playbackRate = speed;
+        },
         stop() {
           stopped = true;
           clearInterval(tickTimer);
@@ -734,23 +782,152 @@
       };
     }
 
+    // Plays faster than normal speed, one clip after another. The NVR only streams recordings
+    // at normal speed, but its downloads arrive about 10 times faster and don't need its one
+    // playback slot. Each clip's video is placed right after the last, so there are no gaps.
+    function playDownloads(camera, startSeconds, { keepFrame, onEnded, onFailed }) {
+      const aborter = new AbortController();
+      const recordings = bandRecordings[camera.id] ?? [];
+      const segments = [];
+      let video, sourceBuffer, tickTimer;
+      let allArrived = false;
+      let lastPosition = 0;
+      let quietSince = Date.now();
+
+      const bufferEnd = () => (sourceBuffer.buffered.length ? sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1) : 0);
+      const bufferUpdated = () => new Promise((resolve) => sourceBuffer.addEventListener('updateend', resolve, { once: true }));
+
+      // Every other clip would fail the same way, so stop trying them.
+      function giveUp(message) {
+        showPlayerMessage(message, true);
+        onFailed(false);
+        throw new Error(message);
+      }
+
+      async function startVideo(codec) {
+        const type = `video/mp4; codecs="${codec}"`;
+        if (!window.MediaSource || !MediaSource.isTypeSupported(type)) giveUp("This browser can't play this video");
+        const mediaSource = new MediaSource();
+        video = createPlayerVideo(camera, mediaSource);
+        // Reading up to a skipped time can take a while, so keep what's showing until then.
+        video.addEventListener('loadeddata', () => {
+          fullFrame.className = 'frame';
+          fullFrame.replaceChildren(video);
+        }, { once: true });
+        await new Promise((resolve) => mediaSource.addEventListener('sourceopen', resolve, { once: true }));
+        URL.revokeObjectURL(video.src);
+        sourceBuffer = mediaSource.addSourceBuffer(type);
+        video.play().catch(() => {});
+        tickTimer = setInterval(tick, TICK_MS);
+      }
+
+      async function append(chunk) {
+        // Wait here rather than holding the video in memory, which also slows the download.
+        while (bufferEnd() - video.currentTime > READ_AHEAD_SECONDS) {
+          await new Promise((resolve) => setTimeout(resolve, TICK_MS));
+          if (aborter.signal.aborted) return;
+        }
+        const { buffered } = sourceBuffer;
+        if (buffered.length && video.currentTime - buffered.start(0) > KEEP_BEHIND_SECONDS * 2) {
+          sourceBuffer.remove(buffered.start(0), video.currentTime - KEEP_BEHIND_SECONDS);
+          await bufferUpdated();
+        }
+        sourceBuffer.appendBuffer(chunk);
+        await bufferUpdated();
+      }
+
+      async function playClip(clip, skip) {
+        const url = `/api/recordings/clips/${camera.id}/${selectedDate()}/${clip.start}?skip=${skip}`;
+        const res = await fetch(url, { signal: aborter.signal });
+        if (res.status === 415) giveUp((await res.json()).error);
+        if (!res.ok) throw new Error((await res.json()).error);
+        if (!video) await startVideo(res.headers.get('X-Video-Codec'));
+        // The last clip may have been cut off partway through a piece of video.
+        sourceBuffer.abort();
+        sourceBuffer.timestampOffset = bufferEnd();
+        segments.push({ from: bufferEnd(), time: clip.start + skip });
+        const reader = res.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) return;
+          await append(value);
+        }
+      }
+
+      async function playClips() {
+        let error;
+        const first = recordings.findIndex(({ end }) => end > startSeconds);
+        for (const [index, clip] of recordings.entries()) {
+          if (first === -1 || index < first) continue;
+          try {
+            await playClip(clip, index === first ? Math.max(startSeconds - clip.start, 0) : 0);
+          } catch (err) {
+            if (aborter.signal.aborted) return;
+            error = err;
+          }
+        }
+        allArrived = true;
+        if (!video) {
+          showPlayerMessage(error?.message ?? 'Could not play this camera', true);
+          onFailed(false);
+        }
+      }
+
+      function tick() {
+        if (!sourceBuffer?.buffered.length) return;
+        const { buffered } = sourceBuffer;
+        const now = video.currentTime;
+        // Skipped time can leave the first video just after where the player is waiting.
+        for (let i = 0; i < buffered.length; i++) {
+          if (now <= buffered.end(i)) {
+            if (now < buffered.start(i)) video.currentTime = buffered.start(i);
+            break;
+          }
+        }
+        if (now !== lastPosition) {
+          lastPosition = now;
+          quietSince = Date.now();
+        } else if (allArrived && Date.now() - quietSince > QUIET_LIMIT_MS) {
+          return onEnded();
+        }
+        const segment = segments.findLast(({ from }) => from <= now);
+        if (segment) setTime(segment.time + now - segment.from);
+      }
+
+      if (!keepFrame) showPlayerMessage('Connecting…');
+      playClips();
+
+      return {
+        setSpeed(speed) {
+          if (video) video.playbackRate = speed;
+        },
+        stop() {
+          aborter.abort();
+          clearInterval(tickTimer);
+          video?.pause();
+        },
+      };
+    }
+
     // Plays from the bar if it's inside the camera's green clip, or else from the next clip.
-    function startPlayback(camera) {
+    function startPlayback(camera, keepFrame = false) {
       const recordings = bandRecordings[camera.id] ?? [];
       const index = currentClipIndex(camera);
       const clip = recordings[index];
       if (!clip) return;
-      if (clip.start > timelineSeconds) return playFrom(camera, clip.start);
-      if (clip.end - timelineSeconds > CLIP_TIME_ERROR_SECONDS) return playFrom(camera, timelineSeconds);
+      if (clip.start > timelineSeconds) return playFrom(camera, clip.start, keepFrame);
+      if (clip.end - timelineSeconds > CLIP_TIME_ERROR_SECONDS) return playFrom(camera, timelineSeconds, keepFrame);
       // Too near the end to start safely, so use the next clip, or this one's start if it's last.
-      playFrom(camera, (recordings[index + 1] ?? clip).start);
+      playFrom(camera, (recordings[index + 1] ?? clip).start, keepFrame);
     }
 
     function playFrom(camera, seconds, keepFrame = false, attempt = 0) {
       stopPlayback();
       setTime(seconds);
-      playback = playRecording(camera, Math.floor(seconds), {
+      const play = playbackSpeed > 1 ? playDownloads : playRecording;
+      playback = play(camera, Math.floor(seconds), {
         keepFrame: keepFrame || attempt > 0,
+        onEnded: stopPlayback,
         onFailed: (canRetry) => {
           if (canRetry && attempt < PLAY_RETRIES) {
             playback.retryTimer = setTimeout(() => playFrom(camera, seconds, true, attempt + 1), PLAY_RETRY_MS * (attempt + 1));
@@ -795,6 +972,7 @@
       fullCamera = camera;
       document.getElementById('full-name').textContent = camera.name;
       fullFrame.replaceChildren();
+      showProgress();
       fullView.showModal();
       startPlayback(camera);
     }
@@ -802,7 +980,7 @@
     // Plays from the bar's time in its own window. It's the same window every time, because
     // the NVR plays one recording at a time.
     function popOut(camera) {
-      const url = `/recordings?camera=${camera.id}&date=${selectedDate()}&time=${timelineSeconds}`;
+      const url = `/recordings?camera=${camera.id}&date=${selectedDate()}&time=${timelineSeconds}&speed=${playbackSpeed}`;
       const size = `left=0,top=0,width=${screen.availWidth},height=${screen.availHeight}`;
       const popup = window.open(url, 'recording', `popup,${size}`);
       popup?.focus();
@@ -816,6 +994,10 @@
       selected.year = year;
       selected.month = month - 1;
       selected.day = day;
+      // An unknown speed leaves the menu empty.
+      fullSpeed.value = pageParams.get('speed');
+      if (!fullSpeed.value) fullSpeed.value = '1';
+      playbackSpeed = Number(fullSpeed.value);
       try {
         const camerasRes = await fetch('/api/cameras');
         const camerasData = await camerasRes.json();
@@ -927,6 +1109,23 @@
     fullPlay.addEventListener('click', () => {
       if (playback) stopPlayback();
       else startPlayback(fullCamera);
+    });
+    // Speeds above normal come from a different source, so crossing over has to reconnect.
+    fullSpeed.addEventListener('change', () => {
+      const wasFast = playbackSpeed > 1;
+      playbackSpeed = Number(fullSpeed.value);
+      if (!playback) return;
+      if (wasFast === playbackSpeed > 1) playback.setSpeed(playbackSpeed);
+      else startPlayback(fullCamera, true);
+    });
+    fullSeek.addEventListener('input', () => {
+      seeking = true;
+      showElapsed(bandRecordings[fullCamera.id]?.[currentClipIndex(fullCamera)]);
+    });
+    fullSeek.addEventListener('change', () => {
+      seeking = false;
+      setTime(Number(fullSeek.value));
+      startPlayback(fullCamera, true);
     });
     document.getElementById('full-close').addEventListener('click', () => fullView.close());
     document.getElementById('full-popout').addEventListener('click', () => {

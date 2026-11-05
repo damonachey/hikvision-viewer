@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createCache } from './cache.js';
 import { createNvrClient, NvrError } from './nvr.js';
 import { createThumbnailBuilder } from './thumbnails.js';
-import { attachVideoStreams } from './video.js';
+import { attachVideoStreams, sendRecordingFile } from './video.js';
 
 const { NVR_URL, NVR_USER, NVR_PASSWORD, NVR_ALLOW_SELF_SIGNED, NVR_RTSP_PORT = '554', HOST = '127.0.0.1', PORT = '3000', CACHE_DIR = 'cache', CACHE_YEARS_HOURS = '24', CACHE_MONTHS_HOURS = '24', CACHE_DAYS_HOURS = '24', CACHE_RECORDINGS_HOURS = '24', CACHE_TODAY_MINUTES = '5' } = process.env;
 
@@ -210,6 +210,20 @@ async function handle(req, res) {
     if (!body) return sendJson(res, 404, { error: 'Not found' });
     res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=86400' });
     return res.end(body);
+  }
+
+  const clipRoute = pathname.match(/^\/api\/recordings\/clips\/(\d+)\/(\d{4})-(\d{2})-(\d{2})\/(\d+)$/);
+  if (clipRoute) {
+    const [, cameraId, year, month, day, start] = clipRoute;
+    const skip = searchParams.get('skip') ?? '0';
+    if (!/^\d+$/.test(skip)) return sendJson(res, 400, { error: 'skip must be a number of seconds' });
+    if (!isValidYear(year)) return sendJson(res, 400, { error: YEAR_ERROR });
+    if (!isValidMonth(String(Number(month)))) return sendJson(res, 400, { error: MONTH_ERROR });
+    if (!isValidDay(String(Number(day)))) return sendJson(res, 400, { error: DAY_ERROR });
+    const recordings = await recordingsOnDay([cameraId], Number(year), Number(month), Number(day));
+    const clip = recordings[cameraId].find((recording) => recording.start === Number(start));
+    if (!clip) return sendJson(res, 404, { error: 'That recording was not found' });
+    return sendRecordingFile(res, nvr, clip.playbackUri, Number(skip));
   }
 
   if (pages.has(pathname)) {

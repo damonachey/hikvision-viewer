@@ -12,6 +12,15 @@ const MAX_CLIENT_BACKLOG_BYTES = 32 * 1024 * 1024;
 // would keep pulling from the NVR, so one missed answer ends the stream.
 const PING_INTERVAL_MS = 15_000;
 
+const OUTPUT_ARGS = [
+  '-c', 'copy',
+  '-f', 'mp4',
+  // Short fragments keep the delay low without waiting for each keyframe.
+  '-frag_duration', '250000',
+  '-movflags', 'empty_moov+default_base_moof+frag_keyframe',
+  'pipe:1',
+];
+
 function ffmpegArgs(rtspUrl) {
   return [
     '-hide_banner',
@@ -23,12 +32,7 @@ function ffmpegArgs(rtspUrl) {
     '-analyzeduration', '1000000',
     '-i', rtspUrl,
     '-map', '0:v:0',
-    '-c', 'copy',
-    '-f', 'mp4',
-    // Short fragments keep the delay low without waiting for each keyframe.
-    '-frag_duration', '250000',
-    '-movflags', 'empty_moov+default_base_moof+frag_keyframe',
-    'pipe:1',
+    ...OUTPUT_ARGS,
   ];
 }
 
@@ -157,6 +161,69 @@ function streamCamera(socket, nvr, cameraId, rtspUrl, activeStreams) {
     ffmpeg.kill();
   });
   socket.on('error', () => ffmpeg.kill());
+}
+
+// Sends a downloaded recording as video the browser can play, at the speed the browser reads
+// it. A download can't start partway through, so FFmpeg reads past the skipped seconds.
+export async function sendRecordingFile(res, nvr, playbackUri, skipSeconds) {
+  const download = await nvr.openDownload(playbackUri);
+  const ffmpeg = spawn('ffmpeg', [
+    '-hide_banner',
+    '-loglevel', 'error',
+    '-f', 'mpeg',
+    '-i', 'pipe:0',
+    '-map', '0:v:0',
+    '-ss', String(skipSeconds),
+    ...OUTPUT_ARGS,
+  ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+
+  let pendingInit = Buffer.alloc(0);
+  let stderr = '';
+  const fail = (status, message) => {
+    if (res.headersSent) return res.destroy();
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: message }));
+  };
+
+  // Both of these are expected once the viewer hangs up.
+  ffmpeg.stdin.on('error', () => {});
+  download.stream.on('error', () => {});
+  download.stream.pipe(ffmpeg.stdin);
+
+  const readInit = (chunk) => {
+    pendingInit = Buffer.concat([pendingInit, chunk]);
+    const initEnd = findInitSegmentEnd(pendingInit);
+    if (initEnd === null) return;
+
+    ffmpeg.stdout.off('data', readInit);
+    const codec = readCodec(pendingInit.subarray(0, initEnd));
+    if (!codec) {
+      ffmpeg.kill();
+      return fail(415, 'Video needs the camera set to H.264');
+    }
+    res.writeHead(200, { 'Content-Type': 'video/mp4', 'Cache-Control': 'no-store', 'X-Video-Codec': codec });
+    res.write(pendingInit);
+    ffmpeg.stdout.pipe(res);
+  };
+  ffmpeg.stdout.on('data', readInit);
+
+  ffmpeg.stderr.on('data', (chunk) => {
+    stderr = (stderr + chunk).slice(-2000);
+  });
+  ffmpeg.on('error', (err) => {
+    download.abort();
+    fail(500, err.code === 'ENOENT' ? 'FFmpeg is not installed on the server' : 'Could not start FFmpeg');
+  });
+  ffmpeg.on('close', () => {
+    download.abort();
+    if (res.headersSent) return;
+    if (stderr) console.error(`Recording file: ${stderr.trim()}`);
+    fail(404, 'This part of the recording has no video');
+  });
+  res.on('close', () => {
+    download.abort();
+    ffmpeg.kill();
+  });
 }
 
 export function attachVideoStreams(server, nvr) {
