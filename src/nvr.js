@@ -75,14 +75,14 @@ function xmlValue(xml, tag) {
     .replaceAll('&amp;', '&');
 }
 
-// Asks for one main-stream recording from any of the cameras, which is enough to show the year has video.
-function recordingSearch(cameraIds, year) {
+// Asks for one main-stream recording from any of the cameras, which is enough to show the time span has video.
+function recordingSearch(cameraIds, startDay, endDay) {
   const tracks = cameraIds.map((id) => `<trackID>${id}01</trackID>`).join('');
   return `<?xml version="1.0" encoding="utf-8"?>
 <CMSearchDescription>
   <searchID>${crypto.randomUUID()}</searchID>
   <trackList>${tracks}</trackList>
-  <timeSpanList><timeSpan><startTime>${year}-01-01T00:00:00Z</startTime><endTime>${year}-12-31T23:59:59Z</endTime></timeSpan></timeSpanList>
+  <timeSpanList><timeSpan><startTime>${startDay}T00:00:00Z</startTime><endTime>${endDay}T23:59:59Z</endTime></timeSpan></timeSpanList>
   <maxResults>1</maxResults>
   <searchResultPostion>0</searchResultPostion>
   <metadataList><metadataDescriptor>//recordType.meta.std-cgi.com</metadataDescriptor></metadataList>
@@ -98,6 +98,7 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
   // Hikvision locks accounts after repeated failed logins, so one rejected
   // password stops all further attempts until the app is restarted.
   let credentialsRejected = false;
+  let lastSearch = Promise.resolve();
 
   async function withSlot(task) {
     if (running >= MAX_CONCURRENT_REQUESTS) {
@@ -169,6 +170,18 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
     }
   }
 
+  // The NVR reports maxConcurrentSearches of 1, so searches wait for each other.
+  function searchInTurn(path, body) {
+    const search = lastSearch.then(async () => (await withSlot(() => authedRequest(path, body))).body.toString());
+    lastSearch = search.catch(() => {});
+    return search;
+  }
+
+  async function hasRecordings(cameraIds, startDay, endDay) {
+    const xml = await searchInTurn('/ISAPI/ContentMgmt/search', recordingSearch(cameraIds, startDay, endDay));
+    return Number(xmlValue(xml, 'numOfMatches')) > 0;
+  }
+
   return {
     credentialsRejected: () => credentialsRejected,
     rejectCredentials() {
@@ -217,9 +230,25 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
       return { contentType, body: res.body };
     },
 
-    async yearHasRecordings(cameraIds, year) {
-      const res = await withSlot(() => authedRequest('/ISAPI/ContentMgmt/search', recordingSearch(cameraIds, year)));
-      return Number(xmlValue(res.body.toString(), 'numOfMatches')) > 0;
+    yearHasRecordings(cameraIds, year) {
+      return hasRecordings(cameraIds, `${year}-01-01`, `${year}-12-31`);
+    },
+
+    monthHasRecordings(cameraIds, year, month) {
+      const monthText = String(month).padStart(2, '0');
+      const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+      return hasRecordings(cameraIds, `${year}-${monthText}-01`, `${year}-${monthText}-${lastDay}`);
+    },
+
+    // Answers for one camera at a time, because this request takes a single track.
+    async daysWithRecordings(cameraId, year, month) {
+      const xml = await searchInTurn(
+        `/ISAPI/ContentMgmt/record/tracks/${cameraId}01/dailyDistribution`,
+        `<?xml version="1.0" encoding="utf-8"?><trackDailyParam><year>${year}</year><monthOfYear>${month}</monthOfYear></trackDailyParam>`,
+      );
+      return xmlBlocks(xml, 'day')
+        .filter((day) => xmlValue(day, 'record') === 'true')
+        .map((day) => Number(xmlValue(day, 'dayOfMonth')));
     },
   };
 }

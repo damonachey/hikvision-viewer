@@ -30,6 +30,7 @@
     .row button:hover { border-color: var(--line); color: var(--text); }
     .row button[aria-current="date"] { border-color: var(--muted); }
     .row button[aria-pressed="true"] { background: var(--text); color: var(--bg); font-weight: 600; }
+    .row button.no-video[aria-pressed="true"] { background: var(--dim); color: var(--text); }
     #years button { font-size: 20px; }
     #days button { padding: 4px 0; }
     #time { width: min(100%, 1116px); margin-top: 16px; accent-color: var(--muted); }
@@ -89,14 +90,16 @@
     const months = Array.from({ length: 12 }, (_, month) => month);
     const days = Array.from({ length: 31 }, (_, index) => index + 1);
 
-    function buildRow(rowId, values, field, label) {
+    function buildRow(rowId, values, field, label, onChange) {
       const buttons = new Map(values.map((value) => {
         const button = document.createElement('button');
         button.type = 'button';
         button.textContent = label(value);
         button.addEventListener('click', () => {
+          const changed = selected[field] !== value;
           selected[field] = value;
           render();
+          if (changed) onChange?.();
         });
         return [value, button];
       }));
@@ -104,8 +107,16 @@
       return buttons;
     }
 
-    const yearButtons = buildRow('years', years, 'year', (year) => year);
-    const monthButtons = buildRow('months', months, 'month', (month) => monthFormat.format(new Date(2000, month, 1)));
+    const yearButtons = buildRow('years', years, 'year', (year) => year, async () => {
+      showWithVideo(monthButtons, []);
+      showWithVideo(dayButtons, []);
+      await loadMonths();
+      await loadDays();
+    });
+    const monthButtons = buildRow('months', months, 'month', (month) => monthFormat.format(new Date(2000, month, 1)), () => {
+      showWithVideo(dayButtons, []);
+      loadDays();
+    });
     const dayButtons = buildRow('days', days, 'day', (day) => day);
 
     function render() {
@@ -129,7 +140,7 @@
     }
 
     const HIDDEN_KEY = 'hiddenRecordingCameras';
-    const YEARS_DELAY_MS = 300;
+    const VIDEO_ROWS_DELAY_MS = 300;
     const CLEARED_MESSAGE_MS = 2000;
     const clearCacheButton = document.getElementById('clear-cache');
     const clearCacheLabel = clearCacheButton.textContent;
@@ -138,8 +149,8 @@
     const errorBox = document.getElementById('error');
     const hiddenCameras = readHiddenCameras();
     let cameras = [];
-    let yearsTimer;
-    let yearsRequest = 0;
+    const latestRowRequest = {};
+    let videoRowsTimer;
 
     // Saves the hidden cameras rather than the shown ones, so new cameras appear by default.
     function readHiddenCameras() {
@@ -156,35 +167,62 @@
       else hiddenCameras.add(camera.id);
       try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hiddenCameras])); } catch {}
       card.hidden = !shown;
-      // Wait in case more cameras are about to change, since each load searches every year.
-      clearTimeout(yearsTimer);
-      yearsTimer = setTimeout(loadYears, YEARS_DELAY_MS);
+      // Wait in case more cameras are about to change, since each load searches every year and month.
+      clearTimeout(videoRowsTimer);
+      videoRowsTimer = setTimeout(loadVideoRows, VIDEO_ROWS_DELAY_MS);
     }
 
-    function showYearsWithVideo(yearsWithVideo) {
-      for (const [year, button] of yearButtons) {
-        const hasVideo = yearsWithVideo.includes(year);
+    function showWithVideo(buttons, valuesWithVideo) {
+      for (const [value, button] of buttons) {
+        const hasVideo = valuesWithVideo.includes(value);
         button.classList.toggle('has-video', hasVideo);
         button.classList.toggle('no-video', !hasVideo);
       }
     }
 
-    async function loadYears() {
-      const request = ++yearsRequest;
-      const shown = cameras.filter((camera) => !hiddenCameras.has(camera.id));
+    function shownCameraIds() {
+      return cameras.filter((camera) => !hiddenCameras.has(camera.id)).map((camera) => camera.id).join(',');
+    }
+
+    async function loadRow(row, url, show) {
+      const request = (latestRowRequest[row] ?? 0) + 1;
+      latestRowRequest[row] = request;
       try {
-        const res = await fetch(`/api/recordings/years?cameras=${shown.map((camera) => camera.id).join(',')}`);
+        const res = await fetch(url);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
-        // A newer load has started, so this answer is for the wrong cameras.
-        if (request !== yearsRequest) return;
+        // A newer load has started, so this answer is for the wrong cameras or year.
+        if (request !== latestRowRequest[row]) return;
         errorBox.hidden = true;
-        showYearsWithVideo(data.years);
+        show(data);
       } catch (err) {
-        if (request !== yearsRequest) return;
+        if (request !== latestRowRequest[row]) return;
         errorBox.textContent = err.message;
         errorBox.hidden = false;
       }
+    }
+
+    function loadYears() {
+      return loadRow('years', `/api/recordings/years?cameras=${shownCameraIds()}`, (data) => showWithVideo(yearButtons, data.years));
+    }
+
+    // The API counts months from 1, and the month row from 0.
+    function loadMonths() {
+      return loadRow('months', `/api/recordings/months?cameras=${shownCameraIds()}&year=${selected.year}`, (data) => {
+        showWithVideo(monthButtons, data.months.map((month) => month - 1));
+      });
+    }
+
+    function loadDays() {
+      return loadRow('days', `/api/recordings/days?cameras=${shownCameraIds()}&year=${selected.year}&month=${selected.month + 1}`, (data) => {
+        showWithVideo(dayButtons, data.days);
+      });
+    }
+
+    async function loadVideoRows() {
+      await loadYears();
+      await loadMonths();
+      await loadDays();
     }
 
     function addCameraOption(camera, card) {
@@ -220,7 +258,7 @@
           addCameraOption(camera, card);
           return card;
         }));
-        await loadYears();
+        await loadVideoRows();
       } catch (err) {
         errorBox.textContent = err.message;
         errorBox.hidden = false;
@@ -232,7 +270,7 @@
       try {
         const res = await fetch('/api/cache', { method: 'DELETE' });
         if (!res.ok) throw new Error((await res.json()).error);
-        await loadYears();
+        await loadVideoRows();
         clearCacheButton.textContent = 'Cleared';
         setTimeout(() => {
           clearCacheButton.textContent = clearCacheLabel;
@@ -250,7 +288,9 @@
     });
     clearCacheButton.addEventListener('click', clearCache);
 
-    showYearsWithVideo([]);
+    showWithVideo(yearButtons, []);
+    showWithVideo(monthButtons, []);
+    showWithVideo(dayButtons, []);
     render();
     loadCameras();
   </script>

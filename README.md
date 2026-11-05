@@ -50,11 +50,13 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 | `PORT` | No | `3000` | Port the app listens on (`.env.example` sets `9999`) |
 | `CACHE_DIR` | No | `cache` | Folder for remembered NVR answers, which the app must be able to write to |
 | `CACHE_YEARS_HOURS` | No | `24` | How long to remember which years have video. `0` turns this cache off. |
+| `CACHE_MONTHS_HOURS` | No | `24` | How long to remember which months have video. `0` turns this cache off. |
+| `CACHE_DAYS_HOURS` | No | `24` | How long to remember which days have video. `0` turns this cache off. |
 
 ## Using the Live page
 
-- The links at the top of the page switch between **Live** and **Recordings**. The **Recordings** page can't play video yet. Its year row shows the last 10 years, brighter for years with video from the ticked cameras, and its gear button keeps a separate list of cameras from this page's.
-- The server saves each year's answer in `query-cache.json` in `CACHE_DIR` to spare the NVR, including across restarts. New video can take as long as `CACHE_YEARS_HOURS` to show. **Clear cached queries** under the **Recordings** page's gear button asks the NVR again.
+- The links at the top of the page switch between **Live** and **Recordings**. The **Recordings** page can't play video yet. Its rows show the last 10 years, then the selected year's months, then the selected month's days, all brighter where the ticked cameras have video. Its gear button keeps a separate list of cameras from this page's.
+- The server saves each answer in `query-cache.json` in `CACHE_DIR` to spare the NVR, including across restarts. New video can take as long as `CACHE_YEARS_HOURS`, `CACHE_MONTHS_HOURS` or `CACHE_DAYS_HOURS` to show. **Clear cached queries** under the **Recordings** page's gear button asks the NVR again.
 - The gear button lets you tick which cameras to show. Hidden cameras aren't requested from the NVR, and new cameras appear by default.
 - **Refresh** gets new snapshots from every shown camera.
 - The list next to **Refresh** sets the auto refresh, which repeats that every 1, 5, 30 or 60 seconds. A refresh is skipped if the last one is still loading, the tab is in the background or a full-size view is open.
@@ -127,6 +129,8 @@ To update it, run `git pull` and `npm ci --omit=dev` in `/opt/hikvision-viewer`,
 | `GET /api/cameras` | JSON list of the cameras, each with `id`, `name` and `online` |
 | `GET /api/cameras/:id/snapshot` | The camera's current image at the NVR's default size. Add `?full=1` for the highest resolution the NVR offers. |
 | `GET /api/recordings/years?cameras=1,2` | JSON list of the years, from the last 10, with main-stream video from any of those cameras. Sends the NVR one search per year, and remembers each answer for `CACHE_YEARS_HOURS`. |
+| `GET /api/recordings/months?cameras=1,2&year=2026` | JSON list of that year's months, numbered from 1, with main-stream video from any of those cameras. Sends the NVR one search per month, skipped if the year has no video, and remembers each answer for `CACHE_MONTHS_HOURS`. |
+| `GET /api/recordings/days?cameras=1,2&year=2026&month=11` | JSON list of that month's days with main-stream video from any of those cameras. Sends the NVR one request per camera, skipped if the month has no video, and remembers each answer for `CACHE_DAYS_HOURS`. |
 | `DELETE /api/cache` | Forgets the remembered NVR answers |
 | WebSocket `/api/cameras/:id/live?stream=main` or `sub` | The camera's stream as fragmented MP4, after a JSON message with its codec. Only same-origin pages can connect, and the server allows 16 streams at once. It pings every 15 seconds and ends a stream whose viewer stops answering. |
 
