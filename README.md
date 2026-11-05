@@ -57,8 +57,9 @@ Settings live in `.env`, which git ignores. Settings with a default are commente
 
 ## Using the Live page
 
-- The links at the top of the page switch between **Live** and **Recordings**. The **Recordings** page can't play video yet. Its rows show the last 10 years, then the selected year's months, then the selected month's days, all brighter where the ticked cameras have video. Under them, each ticked camera has a band showing when it recorded that day, with one bar across all the bands that you drag or skip with the buttons below to pick a time. Each band's latest clip starting at or before the bar is green.
-- Each tile has one button that switches between play and pause. Play works when the camera's band has a green clip. It plays from the bar if the bar is inside that clip, or else from the clip's start, then carries on through that camera's later clips. The NVR plays one camera at a time, so playing another camera stops the first. Moving the bar stops playback. Its gear button keeps a separate list of cameras from this page's.
+- The links at the top of the page switch between **Live** and **Recordings**. The **Recordings** page can't play video yet. Its rows show the last 10 years, then the selected year's months, then the selected month's days, all brighter where the ticked cameras have video. Under them, each ticked camera has a band showing when it recorded that day, with one bar across all the bands that you drag or skip with the buttons below to pick a time. The clip under the bar, or else the next one after it, is green, and each tile shows a thumbnail for it, or black if there's none.
+- Opening a day makes 480×270 thumbnails, one at a time, by downloading just the start of each file. A clip gets its own unless it starts less than five minutes after the last clip that did, in which case it shares that one. Each camera's first and last come first, then the gaps are split in half repeatedly, with the cameras taking turns, so the whole day fills in gradually. Until a day is finished, a tile shows the nearest thumbnail so far. They're kept in `thumbnails` in `CACHE_DIR`, aren't removed by **Clear cached queries**, and are never deleted automatically. **Clear thumbnails** under the gear button deletes all of them, and the day being viewed then starts building again.
+- Each tile has one button that switches between play and pause. Play works when the camera's band has a green clip. It plays from the bar if the bar is inside that clip, or else from the start of the next clip, then carries on through that camera's later clips. The NVR plays one camera at a time, so playing another camera stops the first. Moving the bar stops playback. Its gear button keeps a separate list of cameras from this page's.
 - The server saves each answer in `query-cache.json` in `CACHE_DIR` to spare the NVR, including across restarts. New video can take as long as the matching `CACHE_` setting to show. **Clear cached queries** under the **Recordings** page's gear button asks the NVR again.
 - The gear button lets you tick which cameras to show. Hidden cameras aren't requested from the NVR, and new cameras appear by default.
 - **Refresh** gets new snapshots from every shown camera.
@@ -136,6 +137,10 @@ To update it, run `git pull` and `npm ci --omit=dev` in `/opt/hikvision-viewer`,
 | `GET /api/recordings/days?cameras=1,2&year=2026&month=11` | JSON list of that month's days with main-stream video from any of those cameras. Sends the NVR one request per camera, skipped if the month has no video, and remembers each answer for `CACHE_DAYS_HOURS`, or `CACHE_TODAY_MINUTES` for the current month. |
 | `GET /api/recordings/list?cameras=1,2&year=2026&month=11&day=3` | JSON with each camera's recordings that day. Each has `start` and `end` in seconds since midnight, and a `type`. Sends the NVR at least one search per camera, skipped for days without video, and remembers each answer for `CACHE_RECORDINGS_HOURS`, or `CACHE_TODAY_MINUTES` for today. |
 | WebSocket `/api/cameras/:id/recording?start=20261103T153000` | The camera's main-stream recordings in the same format as live video, from that local time to the end of that day |
+| `PUT /api/recordings/thumbnails?year=2026&month=11&day=3` | Starts making that day's missing thumbnails, in place of any other day in progress |
+| `GET /api/recordings/thumbnails?cameras=1,2&date=2026-11-03` | JSON with the progress, and each camera's thumbnail times in seconds since midnight |
+| `GET /api/recordings/thumbnails/:id/:date/:hhmmss.jpg` | One thumbnail |
+| `DELETE /api/recordings/thumbnails` | Stops any build and deletes every thumbnail |
 | `DELETE /api/cache` | Forgets the remembered NVR answers |
 | WebSocket `/api/cameras/:id/live?stream=main` or `sub` | The camera's stream as fragmented MP4, after a JSON message with its codec. Only same-origin pages can connect, and the server allows 16 streams at once. It pings every 15 seconds and ends a stream whose viewer stops answering. |
 
@@ -145,6 +150,7 @@ To update it, run `git pull` and `npm ci --omit=dev` in `/opt/hikvision-viewer`,
 |---|---|
 | `src/nvr.js` | NVR client: digest auth, camera list and snapshots |
 | `src/live.js` | Live video: runs FFmpeg and sends its output over WebSockets |
+| `src/thumbnails.js` | Makes a thumbnail from the start of each clip |
 | `src/cache.js` | Saves NVR answers to a JSON file, for a set time per type of data |
 | `src/server.js` | Config, routes and the web server |
 | `public/index.html` | The Live page: the camera grid |

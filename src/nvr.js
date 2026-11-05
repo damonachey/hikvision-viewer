@@ -173,6 +173,42 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
     }
   }
 
+  // Starts downloading a recording. The answer is streamed, because a file can be over 1 GB
+  // and the caller may only want the start of it.
+  async function openDownload(playbackUri) {
+    if (credentialsRejected) throw new NvrError(CREDENTIALS_MESSAGE, 503);
+    const path = '/ISAPI/ContentMgmt/download';
+    const uri = playbackUri.replaceAll('&', '&amp;');
+    const body = `<?xml version="1.0" encoding="UTF-8"?><downloadRequest version="1.0" xmlns="http://www.isapi.org/ver20/XMLSchema"><playbackURI>${uri}</playbackURI></downloadRequest>`;
+
+    const request = (authorization) => new Promise((resolve, reject) => {
+      const headers = { 'Content-Type': 'application/xml', 'Content-Length': Buffer.byteLength(body) };
+      if (authorization) headers.Authorization = authorization;
+      const req = transport.request(new URL(path, base), { method: 'GET', headers, timeout: REQUEST_TIMEOUT_MS, rejectUnauthorized: !allowSelfSigned }, (res) => resolve({ req, res }));
+      req.on('timeout', () => req.destroy(new Error('timed out')));
+      req.on('error', reject);
+      req.end(body);
+    });
+
+    let { req, res } = await request();
+    if (res.statusCode === 401) {
+      res.resume();
+      const challenge = parseChallenge(res.headers['www-authenticate']);
+      if (!challenge) throw new NvrError('The NVR did not offer a supported digest login.');
+      ({ req, res } = await request(digestHeader(challenge, { method: 'GET', uri: path, user, password })));
+      if (res.statusCode === 401) {
+        res.resume();
+        credentialsRejected = true;
+        throw new NvrError(CREDENTIALS_MESSAGE, 503);
+      }
+    }
+    if (res.statusCode !== 200) {
+      res.resume();
+      throw new NvrError(`The NVR returned HTTP ${res.statusCode} for a download`);
+    }
+    return { stream: res, abort: () => req.destroy() };
+  }
+
   // The NVR reports maxConcurrentSearches of 1, so searches wait for each other.
   function searchInTurn(path, body) {
     const search = lastSearch.then(async () => (await withSlot(() => authedRequest(path, body))).body.toString());
@@ -187,6 +223,7 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
 
   return {
     credentialsRejected: () => credentialsRejected,
+    openDownload,
     rejectCredentials() {
       credentialsRejected = true;
     },
@@ -267,6 +304,7 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
             start: secondsIntoDay(xmlValue(item, 'startTime')),
             end: secondsIntoDay(xmlValue(item, 'endTime')),
             type: xmlValue(item, 'metadataDescriptor')?.split('/').pop() ?? 'unknown',
+            playbackUri: xmlValue(item, 'playbackURI'),
           });
         }
         if (!items.length || xmlValue(xml, 'responseStatusStrg') !== 'MORE') return recordings;

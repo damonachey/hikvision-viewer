@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createCache } from './cache.js';
 import { attachLiveStreams } from './live.js';
 import { createNvrClient, NvrError } from './nvr.js';
+import { createThumbnailBuilder } from './thumbnails.js';
 
 const { NVR_URL, NVR_USER, NVR_PASSWORD, NVR_ALLOW_SELF_SIGNED, NVR_RTSP_PORT = '554', HOST = '127.0.0.1', PORT = '3000', CACHE_DIR = 'cache', CACHE_YEARS_HOURS = '24', CACHE_MONTHS_HOURS = '24', CACHE_DAYS_HOURS = '24', CACHE_RECORDINGS_HOURS = '24', CACHE_TODAY_MINUTES = '5' } = process.env;
 
@@ -40,11 +41,11 @@ const queryCache = createCache({
     recordingYear: cacheLifetimeMs('CACHE_YEARS_HOURS', CACHE_YEARS_HOURS, 'hours', HOUR_MS),
     recordingMonth: cacheLifetimeMs('CACHE_MONTHS_HOURS', CACHE_MONTHS_HOURS, 'hours', HOUR_MS),
     recordingDays: cacheLifetimeMs('CACHE_DAYS_HOURS', CACHE_DAYS_HOURS, 'hours', HOUR_MS),
-    recordings: cacheLifetimeMs('CACHE_RECORDINGS_HOURS', CACHE_RECORDINGS_HOURS, 'hours', HOUR_MS),
+    recordingFiles: cacheLifetimeMs('CACHE_RECORDINGS_HOURS', CACHE_RECORDINGS_HOURS, 'hours', HOUR_MS),
     recordingYearNow: todayLifetimeMs,
     recordingMonthNow: todayLifetimeMs,
     recordingDaysNow: todayLifetimeMs,
-    recordingsNow: todayLifetimeMs,
+    recordingFilesNow: todayLifetimeMs,
   },
 });
 
@@ -125,11 +126,18 @@ async function recordingsOnDay(cameraIds, year, month, day) {
   for (const cameraId of new Set(cameraIds)) {
     const hasVideo = dayHasVideo && (await cameraDaysWithRecordings(cameraId, year, month)).includes(day);
     cameras[cameraId] = hasVideo
-      ? await queryCache.get(cacheType('recordings', year, month, day), `${date}:${cameraId}`, () => nvr.recordingsOnDay(cameraId, date))
+      ? await queryCache.get(cacheType('recordingFiles', year, month, day), `${date}:${cameraId}`, () => nvr.recordingsOnDay(cameraId, date))
       : [];
   }
   return cameras;
 }
+
+const thumbnails = createThumbnailBuilder({
+  nvr,
+  directory: path.join(CACHE_DIR, 'thumbnails'),
+  listCameras: () => nvr.listCameras(),
+  listRecordings: recordingsOnDay,
+});
 
 function isValidYear(text) {
   const lastYear = new Date().getFullYear();
@@ -146,7 +154,39 @@ async function handle(req, res) {
     return res.end();
   }
 
+  // DELETE and PUT rather than POST because browsers won't let another website send them here.
+  if (req.method === 'DELETE' && pathname === '/api/recordings/thumbnails') {
+    await thumbnails.clear();
+    res.writeHead(204);
+    return res.end();
+  }
+  if (req.method === 'PUT' && pathname === '/api/recordings/thumbnails') {
+    const year = searchParams.get('year');
+    const month = searchParams.get('month');
+    const day = searchParams.get('day');
+    if (!isValidYear(year)) return sendJson(res, 400, { error: `year must be within the last ${YEARS_BACK} years` });
+    if (!/^(1[0-2]|[1-9])$/.test(month ?? '')) return sendJson(res, 400, { error: 'month must be from 1 to 12' });
+    if (!/^([1-9]|[12]\d|3[01])$/.test(day ?? '')) return sendJson(res, 400, { error: 'day must be from 1 to 31' });
+    return sendJson(res, 200, thumbnails.start(Number(year), Number(month), Number(day)));
+  }
+
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+
+  if (pathname === '/api/recordings/thumbnails') {
+    const cameras = searchParams.get('cameras') ?? '';
+    const date = searchParams.get('date') ?? '';
+    if (!/^(\d+(,\d+)*)?$/.test(cameras)) return sendJson(res, 400, { error: 'cameras must be a list of camera ids' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return sendJson(res, 400, { error: 'date must look like 2026-11-04' });
+    return sendJson(res, 200, { status: thumbnails.status(), cameras: await thumbnails.list(cameras ? cameras.split(',') : [], date) });
+  }
+
+  const thumbnailRoute = pathname.match(/^\/api\/recordings\/thumbnails\/(\d+)\/(\d{4}-\d{2}-\d{2})\/(\d{6})\.jpg$/);
+  if (thumbnailRoute) {
+    const body = await readFile(thumbnails.filePath(thumbnailRoute[1], thumbnailRoute[2], thumbnailRoute[3])).catch(() => null);
+    if (!body) return sendJson(res, 404, { error: 'Not found' });
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=86400' });
+    return res.end(body);
+  }
 
   if (pages.has(pathname)) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -189,7 +229,10 @@ async function handle(req, res) {
 
     const day = searchParams.get('day');
     if (!/^([1-9]|[12]\d|3[01])$/.test(day ?? '')) return sendJson(res, 400, { error: 'day must be from 1 to 31' });
-    return sendJson(res, 200, { cameras: cameras ? await recordingsOnDay(cameraIds, Number(year), Number(month), Number(day)) : {} });
+    const recordings = cameras ? await recordingsOnDay(cameraIds, Number(year), Number(month), Number(day)) : {};
+    // The playback address is only for the server, and it reveals where the NVR is.
+    const list = Object.fromEntries(Object.entries(recordings).map(([id, clips]) => [id, clips.map(({ playbackUri, ...clip }) => clip)]));
+    return sendJson(res, 200, { cameras: list });
   }
 
   sendJson(res, 404, { error: 'Not found' });
