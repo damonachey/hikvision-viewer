@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import http from 'node:http';
+import { createCache } from './cache.js';
 import { attachLiveStreams } from './live.js';
 import { createNvrClient, NvrError } from './nvr.js';
 
@@ -19,6 +20,9 @@ const nvr = createNvrClient({
 });
 
 const YEARS_BACK = 10;
+const YEAR_CACHE_MS = 24 * 60 * 60 * 1000;
+
+const queryCache = createCache();
 
 const pages = new Map([
   ['/', new URL('../public/index.html', import.meta.url)],
@@ -30,8 +34,27 @@ function sendJson(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
+async function yearsWithRecordings(cameraIds) {
+  const key = [...new Set(cameraIds)].sort().join(',');
+  const lastYear = new Date().getFullYear();
+  const years = [];
+  // Sequential so a wrong password costs one failed login, not one per year.
+  for (let year = lastYear - YEARS_BACK; year <= lastYear; year++) {
+    const hasRecordings = await queryCache.get(`recording-year:${year}:${key}`, YEAR_CACHE_MS, () => nvr.yearHasRecordings(cameraIds, year));
+    if (hasRecordings) years.push(year);
+  }
+  return years;
+}
+
 async function handle(req, res) {
   const { pathname, searchParams } = new URL(req.url, 'http://localhost');
+
+  // DELETE rather than POST because browsers won't let another website send one here.
+  if (req.method === 'DELETE' && pathname === '/api/cache') {
+    queryCache.clear();
+    res.writeHead(204);
+    return res.end();
+  }
 
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
 
@@ -55,8 +78,7 @@ async function handle(req, res) {
     const cameras = searchParams.get('cameras') ?? '';
     if (!/^(\d+(,\d+)*)?$/.test(cameras)) return sendJson(res, 400, { error: 'cameras must be a list of camera ids' });
     if (!cameras) return sendJson(res, 200, { years: [] });
-    const lastYear = new Date().getFullYear();
-    return sendJson(res, 200, { years: await nvr.yearsWithRecordings(cameras.split(','), lastYear - YEARS_BACK, lastYear) });
+    return sendJson(res, 200, { years: await yearsWithRecordings(cameras.split(',')) });
   }
 
   sendJson(res, 404, { error: 'Not found' });

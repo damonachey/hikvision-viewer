@@ -217,14 +217,9 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
       return { contentType, body: res.body };
     },
 
-    async yearsWithRecordings(cameraIds, firstYear, lastYear) {
-      const years = [];
-      // Sequential so a wrong password costs one failed login, not one per year.
-      for (let year = firstYear; year <= lastYear; year++) {
-        const res = await withSlot(() => authedRequest('/ISAPI/ContentMgmt/search', recordingSearch(cameraIds, year)));
-        if (Number(xmlValue(res.body.toString(), 'numOfMatches')) > 0) years.push(year);
-      }
-      return years;
+    async yearHasRecordings(cameraIds, year) {
+      const res = await withSlot(() => authedRequest('/ISAPI/ContentMgmt/search', recordingSearch(cameraIds, year)));
+      return Number(xmlValue(res.body.toString(), 'numOfMatches')) > 0;
     },
   };
 }
