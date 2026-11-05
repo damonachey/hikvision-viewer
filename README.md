@@ -4,6 +4,11 @@ A small local web app that shows snapshots from the cameras on a Hikvision NVR, 
 
 A Node server logs in to the NVR and passes the images and video to a single web page, so your NVR credentials never reach the browser. Snapshots, recording lists and thumbnail downloads use the NVR's ISAPI interface, and live video and playback use RTSP through FFmpeg.
 
+<p>
+  <img src="docs/images/live.png" alt="The Live page, showing a grid of cameras" width="55.9%" align="top">
+  <img src="docs/images/recordings.png" alt="The Recordings page, showing the date rows, timeline bands and camera tiles" width="42.1%" align="top">
+</p>
+
 ## Requirements
 
 - Node.js 22.9 or newer
