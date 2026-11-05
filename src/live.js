@@ -74,8 +74,8 @@ function failStream(socket, message, { fatal = false } = {}) {
   socket.close(fatal ? 1008 : 1011);
 }
 
-function streamCamera(socket, nvr, cameraId, streamSuffix, activeStreams) {
-  const ffmpeg = spawn('ffmpeg', ffmpegArgs(nvr.rtspUrl(cameraId, streamSuffix)), {
+function streamCamera(socket, nvr, cameraId, rtspUrl, activeStreams) {
+  const ffmpeg = spawn('ffmpeg', ffmpegArgs(rtspUrl), {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -120,7 +120,7 @@ function streamCamera(socket, nvr, cameraId, streamSuffix, activeStreams) {
     const codec = readCodec(pendingInit.subarray(0, initEnd));
     if (!codec) {
       ffmpeg.kill();
-      return failStream(socket, 'Live view needs the camera set to H.264', { fatal: true });
+      return failStream(socket, 'Video needs the camera set to H.264', { fatal: true });
     }
     initSent = true;
     sendJson(socket, { type: 'init', codec });
@@ -165,18 +165,25 @@ export function attachLiveStreams(server, nvr) {
 
   server.on('upgrade', (req, socket, head) => {
     const { pathname, searchParams } = new URL(req.url, 'http://localhost');
-    const route = pathname.match(/^\/api\/cameras\/(\d+)\/live$/);
-    const streamSuffix = STREAM_SUFFIXES[searchParams.get('stream')];
+    const route = pathname.match(/^\/api\/cameras\/(\d+)\/(live|recording)$/);
+    let rtspUrl;
+    if (route?.[2] === 'live') {
+      const streamSuffix = STREAM_SUFFIXES[searchParams.get('stream')];
+      if (streamSuffix) rtspUrl = nvr.rtspUrl(route[1], streamSuffix);
+    } else if (route) {
+      const start = searchParams.get('start')?.match(/^(\d{8})T(\d{6})$/);
+      if (start) rtspUrl = nvr.recordingUrl(route[1], start[1], start[2]);
+    }
 
-    if (!route || !streamSuffix || !isSameOrigin(req)) {
+    if (!rtspUrl || !isSameOrigin(req)) {
       socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
       return;
     }
 
     wss.handleUpgrade(req, socket, head, (client) => {
       if (nvr.credentialsRejected()) return failStream(client, CREDENTIALS_MESSAGE, { fatal: true });
-      if (activeStreams.size >= MAX_STREAMS) return failStream(client, 'Too many live streams are open');
-      streamCamera(client, nvr, route[1], streamSuffix, activeStreams);
+      if (activeStreams.size >= MAX_STREAMS) return failStream(client, 'Too many video streams are open');
+      streamCamera(client, nvr, route[1], rtspUrl, activeStreams);
     });
   });
 }

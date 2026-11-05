@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Recordings</title>
   <style>
-    :root { color-scheme: dark; --bg: #111418; --card: #1b2026; --line: #2c333b; --text: #e8ebee; --muted: #98a2ad; --dim: #59626c; --bad: #ff8a80; }
+    :root { color-scheme: dark; --bg: #111418; --card: #1b2026; --line: #2c333b; --text: #e8ebee; --muted: #98a2ad; --dim: #59626c; --current-clip: #4cd964; --bad: #ff8a80; }
     * { box-sizing: border-box; }
     body { display: flex; flex-direction: column; min-height: 100vh; margin: 0; padding: 16px; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
     header { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
@@ -43,20 +43,26 @@
     .band { position: relative; height: 16px; overflow: hidden; border-radius: 3px; background: var(--card); }
     /* A short clip would otherwise be too thin to see on a whole-day scale. */
     .band div { position: absolute; top: 0; bottom: 0; min-width: 2px; background: var(--muted); }
+    .band div.current { z-index: 1; background: var(--current-clip); }
     #playhead { position: absolute; top: 0; bottom: 0; left: calc(var(--label-width) + (100% - var(--label-width)) * var(--position, 0)); width: 2px; margin-left: -1px; background: var(--text); pointer-events: none; }
     #playhead::before { content: ""; position: absolute; top: 8px; left: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--text); }
     #transport { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; margin-top: 10px; }
     .transport-group { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
     #transport button { min-width: 44px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
     #transport button:hover { border-color: var(--muted); }
-    #transport svg { display: block; margin: 2px auto; }
-    #transport button[aria-pressed="true"] { background: var(--text); color: var(--bg); font-weight: 600; }
     #error { margin-top: 16px; color: var(--bad); }
     #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 452px), 1fr)); gap: 12px; margin-top: 16px; }
     .camera { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
-    .frame { aspect-ratio: 16 / 9; background: #000; }
-    .caption { padding: 8px 10px; }
-    .name { display: block; overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    .frame { display: flex; align-items: center; justify-content: center; aspect-ratio: 16 / 9; background: #000; color: var(--muted); font-size: 13px; text-align: center; }
+    .frame.failed { color: var(--bad); }
+    .frame video { display: block; width: 100%; height: 100%; object-fit: contain; }
+    .caption { display: flex; align-items: center; gap: 4px; padding: 8px 10px; }
+    .name { display: block; overflow: hidden; margin-right: auto; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    .caption button { display: flex; flex: none; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); cursor: pointer; }
+    .caption button:hover:not(:disabled) { border-color: var(--muted); }
+    .caption button:disabled { color: var(--dim); cursor: default; }
+    .tile-play .pause-icon, .tile-play.playing .play-icon { display: none; }
+    .tile-play.playing .pause-icon { display: block; }
   </style>
 </head>
 <body>
@@ -93,29 +99,16 @@
         </div>
         <div id="transport">
           <div class="transport-group" role="group" aria-label="Skip back">
-            <button type="button" aria-label="Back 1 hour">&laquo; 1h</button>
-            <button type="button" aria-label="Back 15 minutes">&laquo; 15m</button>
-            <button type="button" aria-label="Back 5 minutes">&laquo; 5m</button>
-            <button type="button" aria-label="Back 1 minute">&laquo; 1m</button>
-          </div>
-          <div class="transport-group" role="group" aria-label="Playback">
-            <button type="button" aria-label="Play" title="Play">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 3v18l15-9z"/></svg>
-            </button>
-            <button type="button" aria-label="Pause" title="Pause">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 3h5v18H5zM14 3h5v18h-5z"/></svg>
-            </button>
+            <button type="button" data-skip="-3600" aria-label="Back 1 hour">&laquo; 1h</button>
+            <button type="button" data-skip="-900" aria-label="Back 15 minutes">&laquo; 15m</button>
+            <button type="button" data-skip="-300" aria-label="Back 5 minutes">&laquo; 5m</button>
+            <button type="button" data-skip="-60" aria-label="Back 1 minute">&laquo; 1m</button>
           </div>
           <div class="transport-group" role="group" aria-label="Skip forward">
-            <button type="button" aria-label="Forward 1 minute">1m &raquo;</button>
-            <button type="button" aria-label="Forward 5 minutes">5m &raquo;</button>
-            <button type="button" aria-label="Forward 15 minutes">15m &raquo;</button>
-            <button type="button" aria-label="Forward 1 hour">1h &raquo;</button>
-          </div>
-          <div id="speeds" class="transport-group" role="group" aria-label="Playback speed">
-            <button type="button" data-speed="0.5" aria-label="Half speed">0.5x</button>
-            <button type="button" data-speed="1" aria-label="Normal speed">1x</button>
-            <button type="button" data-speed="2" aria-label="Double speed">2x</button>
+            <button type="button" data-skip="60" aria-label="Forward 1 minute">1m &raquo;</button>
+            <button type="button" data-skip="300" aria-label="Forward 5 minutes">5m &raquo;</button>
+            <button type="button" data-skip="900" aria-label="Forward 15 minutes">15m &raquo;</button>
+            <button type="button" data-skip="3600" aria-label="Forward 1 hour">1h &raquo;</button>
           </div>
         </div>
       </div>
@@ -126,7 +119,13 @@
   <template id="camera-template">
     <article class="camera">
       <div class="frame"></div>
-      <div class="caption"><span class="name"></span></div>
+      <div class="caption">
+        <span class="name"></span>
+        <button class="tile-play" type="button" disabled>
+          <svg class="play-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 3v18l15-9z"/></svg>
+          <svg class="pause-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 3h5v18H5zM14 3h5v18h-5z"/></svg>
+        </button>
+      </div>
     </article>
   </template>
 
@@ -150,7 +149,10 @@
           const changed = selected[field] !== value;
           selected[field] = value;
           render();
-          if (changed) onChange?.();
+          if (changed) {
+            stopPlayback();
+            onChange?.();
+          }
         });
         return [value, button];
       }));
@@ -212,8 +214,22 @@
     const bands = document.getElementById('bands');
     const timelineBody = document.getElementById('timeline-body');
     const timelineScale = document.getElementById('timeline-scale');
-    const speedButtons = document.querySelectorAll('#speeds button');
     const latestRowRequest = {};
+    const TICK_MS = 200;
+    const GAP_TOLERANCE_SECONDS = 0.15;
+    // More new video than this at once means the stream jumped over a gap.
+    const MIN_GAP_SECONDS = 3;
+    // Roughly how much of the next clip has arrived when a jump is noticed.
+    const NEW_CLIP_SECONDS = 0.4;
+    const QUIET_LIMIT_MS = 2000;
+    const START_LIMIT_MS = 8000;
+    // The search's clip times can be a few seconds off from the video itself, and a request
+    // past a clip's real end would get the next clip's video.
+    const CLIP_TIME_ERROR_SECONDS = 6;
+    // Removing video also removes frames up to the next keyframe, so keep plenty behind.
+    const KEEP_BEHIND_SECONDS = 30;
+    let playback = null;
+    let videoCamera = null;
     let videoRowsTimer;
     let bandRecordings = {};
     let timelineSeconds = 0;
@@ -233,6 +249,7 @@
       else hiddenCameras.add(camera.id);
       try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hiddenCameras])); } catch {}
       card.hidden = !shown;
+      if (playback?.camera === camera) stopPlayback();
       showBands(bandRecordings);
       // Wait in case more cameras are about to change, since each load searches every year and month.
       clearTimeout(videoRowsTimer);
@@ -316,6 +333,7 @@
         name.title = camera.name;
         const band = document.createElement('div');
         band.className = 'band';
+        band.dataset.camera = camera.id;
         band.append(...(recordings[camera.id] ?? []).map(({ start, end }) => {
           const clip = document.createElement('div');
           clip.style.left = `${(start / SECONDS_PER_DAY) * 100}%`;
@@ -326,6 +344,19 @@
         row.append(name, band);
         return row;
       }));
+      markCurrentClips();
+    }
+
+    // Turns each band's latest clip starting at or before the bar green, and allows play
+    // only for the cameras that have one.
+    function markCurrentClips() {
+      for (const camera of cameras) {
+        const index = (bandRecordings[camera.id] ?? []).findLastIndex(({ start }) => start <= timelineSeconds);
+        const clips = bands.querySelector(`[data-camera="${camera.id}"]`);
+        clips?.querySelector('.current')?.classList.remove('current');
+        clips?.children[index]?.classList.add('current');
+        if (camera.playButton) camera.playButton.disabled = index === -1;
+      }
     }
 
     function setTime(seconds) {
@@ -335,6 +366,11 @@
       timelineBody.setAttribute('aria-valuenow', timelineSeconds);
       timelineBody.setAttribute('aria-valuetext', text);
       document.getElementById('timeline-time').textContent = text;
+      markCurrentClips();
+    }
+
+    function selectedDate() {
+      return `${selected.year}-${String(selected.month + 1).padStart(2, '0')}-${String(selected.day).padStart(2, '0')}`;
     }
 
     function setTimeFromPointer(event) {
@@ -342,9 +378,182 @@
       setTime(((event.clientX - left) / width) * SECONDS_PER_DAY);
     }
 
-    function setSpeed(speed) {
-      for (const button of speedButtons) {
-        button.setAttribute('aria-pressed', button.dataset.speed === speed);
+    // Plays one camera's recordings from a time of day until stop() or the stream goes quiet.
+    function playRecording(camera, startSeconds, { keepFrame, onQuiet, onFailed }) {
+      const start = `${selectedDate().replaceAll('-', '')}T${formatTime(startSeconds).replaceAll(':', '')}`;
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const socket = new WebSocket(`${protocol}//${location.host}/api/cameras/${camera.id}/recording?start=${start}`);
+      const queue = [];
+      const gaps = [];
+      const { frame } = camera;
+      let video, sourceBuffer, tickTimer;
+      let stopped = false;
+      let failed = false;
+      let bufferedEnd = 0;
+      let lastPosition = 0;
+      let quietSince = Date.now();
+
+      function showMessage(text, isFailure = false) {
+        frame.className = isFailure ? 'frame failed' : 'frame';
+        frame.textContent = text;
+      }
+
+      function appendNext() {
+        if (!sourceBuffer || sourceBuffer.updating || !queue.length) return;
+        try {
+          sourceBuffer.appendBuffer(queue.shift());
+        } catch {
+          socket.close();
+        }
+      }
+
+      function onBufferUpdated() {
+        // A new chunk may have started appending before this event arrived.
+        if (sourceBuffer.updating) return;
+        const { buffered } = sourceBuffer;
+        if (buffered.length && video.currentTime - buffered.start(0) > KEEP_BEHIND_SECONDS * 2) {
+          sourceBuffer.remove(buffered.start(0), video.currentTime - KEEP_BEHIND_SECONDS);
+          return;
+        }
+        appendNext();
+      }
+
+      function startVideo(codec) {
+        const type = `video/mp4; codecs="${codec}"`;
+        if (!window.MediaSource || !MediaSource.isTypeSupported(type)) {
+          failed = true;
+          showMessage("This browser can't play this video", true);
+          socket.close();
+          return;
+        }
+        const mediaSource = new MediaSource();
+        video = document.createElement('video');
+        video.muted = true;
+        video.playsInline = true;
+        video.setAttribute('aria-label', camera.name);
+        video.src = URL.createObjectURL(mediaSource);
+        mediaSource.addEventListener('sourceopen', () => {
+          URL.revokeObjectURL(video.src);
+          if (stopped) return;
+          sourceBuffer = mediaSource.addSourceBuffer(type);
+          sourceBuffer.addEventListener('updateend', onBufferUpdated);
+          appendNext();
+        }, { once: true });
+        frame.className = 'frame';
+        frame.replaceChildren(video);
+        video.play().catch(() => {});
+        tickTimer = setInterval(tick, TICK_MS);
+      }
+
+      // The video's timestamps keep the real time between clips, and the browser holds the
+      // last frame across each gap, so the player has to be moved past them. The NVR doesn't
+      // always send the next clip, so a stream that goes quiet is handed back to the caller.
+      function tick() {
+        if (!sourceBuffer?.buffered.length) return;
+        const { buffered } = sourceBuffer;
+        const end = buffered.end(buffered.length - 1);
+        if (end - bufferedEnd > MIN_GAP_SECONDS) gaps.push({ from: bufferedEnd, to: end - NEW_CLIP_SECONDS });
+        bufferedEnd = end;
+
+        const now = video.currentTime;
+        const gap = gaps.find(({ from, to }) => now >= from - GAP_TOLERANCE_SECONDS && now < to);
+        if (gap) video.currentTime = gap.to;
+        else if (now < buffered.start(0)) video.currentTime = buffered.start(0);
+
+        // The player can stop just short of the buffer's end, so watch for it not advancing.
+        if (now !== lastPosition || gap) {
+          lastPosition = now;
+          quietSince = Date.now();
+        } else if (Date.now() - quietSince > (now > 0 ? QUIET_LIMIT_MS : START_LIMIT_MS)) {
+          return onQuiet(startSeconds + now);
+        }
+        setTime(startSeconds + video.currentTime);
+      }
+
+      socket.binaryType = 'arraybuffer';
+      socket.onmessage = ({ data }) => {
+        if (stopped) return;
+        if (typeof data !== 'string') {
+          queue.push(data);
+          appendNext();
+          return;
+        }
+        const message = JSON.parse(data);
+        if (message.type === 'init') startVideo(message.codec);
+        else if (message.type === 'error' && message.fatal) {
+          failed = true;
+          showMessage(message.message, true);
+        }
+      };
+      socket.onclose = () => {
+        if (stopped || video) return;
+        if (!failed) showMessage('Could not play this camera', true);
+        onFailed();
+      };
+      if (!keepFrame) showMessage('Connecting…');
+
+      return {
+        camera,
+        stop() {
+          stopped = true;
+          clearInterval(tickTimer);
+          socket.close();
+          video?.pause();
+        },
+      };
+    }
+
+    // Plays from the bar if it's inside the camera's green clip, or else from that clip's start.
+    function startPlayback(camera) {
+      const recordings = bandRecordings[camera.id] ?? [];
+      const clip = recordings.findLast(({ start }) => start <= timelineSeconds);
+      if (!clip) return;
+      const insideClip = clip.end - timelineSeconds > CLIP_TIME_ERROR_SECONDS;
+      playFrom(camera, insideClip ? timelineSeconds : clip.start);
+    }
+
+    function playFrom(camera, seconds, keepFrame = false) {
+      stopPlayback({ keepFrame });
+      videoCamera = camera;
+      setTime(seconds);
+      playback = {
+        camera,
+        ...playRecording(camera, Math.floor(seconds), {
+          keepFrame,
+          onFailed: () => stopPlayback({ keepFrame: true }),
+          onQuiet: (position) => resumeAfterQuiet(camera, position),
+        }),
+      };
+      showPlaybackState();
+    }
+
+    // Reconnects where the video should carry on, or stops if the day's video has run out.
+    function resumeAfterQuiet(camera, position) {
+      const recordings = bandRecordings[camera.id] ?? [];
+      const stillInClip = recordings.some(({ start, end }) => start <= position && end - position > CLIP_TIME_ERROR_SECONDS);
+      const next = recordings.find(({ start }) => start > position + 1);
+      if (!stillInClip && !next) return stopPlayback({ keepFrame: true });
+      playFrom(camera, stillInClip ? position : next.start, true);
+    }
+
+    function stopPlayback({ keepFrame = false } = {}) {
+      playback?.stop();
+      playback = null;
+      if (!keepFrame && videoCamera) {
+        videoCamera.frame.replaceChildren();
+        videoCamera.frame.className = 'frame';
+        videoCamera = null;
+      }
+      showPlaybackState();
+    }
+
+    function showPlaybackState() {
+      for (const camera of cameras) {
+        if (!camera.playButton) continue;
+        const isPlaying = playback?.camera === camera;
+        camera.playButton.classList.toggle('playing', isPlaying);
+        camera.playButton.title = `${isPlaying ? 'Pause' : 'Play'} ${camera.name}`;
+        camera.playButton.setAttribute('aria-label', camera.playButton.title);
       }
     }
 
@@ -361,6 +570,7 @@
       };
       if (!Object.hasOwn(moves, event.key)) return;
       event.preventDefault();
+      stopPlayback();
       setTime(moves[event.key]);
     }
 
@@ -393,10 +603,17 @@
           const name = card.querySelector('.name');
           name.textContent = camera.name;
           name.title = camera.name;
+          camera.frame = card.querySelector('.frame');
+          camera.playButton = card.querySelector('.tile-play');
+          camera.playButton.addEventListener('click', () => {
+            if (playback?.camera === camera) stopPlayback({ keepFrame: true });
+            else startPlayback(camera);
+          });
           card.hidden = hiddenCameras.has(camera.id);
           addCameraOption(camera, card);
           return card;
         }));
+        showPlaybackState();
         await loadVideoRows();
       } catch (err) {
         errorBox.textContent = err.message;
@@ -433,6 +650,7 @@
       return label;
     }));
     timelineBody.addEventListener('pointerdown', (event) => {
+      stopPlayback();
       timelineBody.setPointerCapture(event.pointerId);
       setTimeFromPointer(event);
     });
@@ -440,10 +658,12 @@
       if (timelineBody.hasPointerCapture(event.pointerId)) setTimeFromPointer(event);
     });
     timelineBody.addEventListener('keydown', moveTimeWithKeys);
-    for (const button of speedButtons) {
-      button.addEventListener('click', () => setSpeed(button.dataset.speed));
+    for (const button of document.querySelectorAll('[data-skip]')) {
+      button.addEventListener('click', () => {
+        stopPlayback();
+        setTime(timelineSeconds + Number(button.dataset.skip));
+      });
     }
-    setSpeed('1');
     setTime(0);
 
     showWithVideo(yearButtons, []);

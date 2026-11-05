@@ -196,6 +196,13 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
       return `rtsp://${login}@${base.hostname}:${rtspPort}/Streaming/Channels/${cameraId}${streamSuffix}`;
     },
 
+    // Plays from the start time to the end of that day. A slash before the query, as in the
+    // address the search returns, makes the NVR answer FFmpeg's SETUP with a 401.
+    recordingUrl(cameraId, day, time) {
+      const login = `${encodeURIComponent(user)}:${encodeURIComponent(password)}`;
+      return `rtsp://${login}@${base.hostname}:${rtspPort}/Streaming/tracks/${cameraId}01?starttime=${day}T${time}Z&endtime=${day}T235959Z`;
+    },
+
     async listCameras() {
       // Sequential so a wrong password costs one failed login, not two.
       const channels = await withSlot(() => authedRequest('/ISAPI/ContentMgmt/InputProxy/channels'));
