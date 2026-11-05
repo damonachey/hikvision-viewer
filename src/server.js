@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat, statfs } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { createCache } from './cache.js';
@@ -144,6 +144,17 @@ function isValidYear(text) {
   return /^\d{4}$/.test(text) && Number(text) >= lastYear - YEARS_BACK && Number(text) <= lastYear;
 }
 
+async function cacheInfo() {
+  const queryFile = await stat(path.join(CACHE_DIR, 'query-cache.json')).catch(() => null);
+  const disk = await statfs(CACHE_DIR).catch(() => null);
+  return {
+    queryBytes: queryFile?.size ?? 0,
+    days: await thumbnails.info(),
+    diskFreeBytes: disk ? disk.bavail * disk.bsize : null,
+    diskTotalBytes: disk ? disk.blocks * disk.bsize : null,
+  };
+}
+
 async function handle(req, res) {
   const { pathname, searchParams } = new URL(req.url, 'http://localhost');
 
@@ -171,6 +182,8 @@ async function handle(req, res) {
   }
 
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+
+  if (pathname === '/api/cache') return sendJson(res, 200, await cacheInfo());
 
   if (pathname === '/api/recordings/thumbnails') {
     const cameras = searchParams.get('cameras') ?? '';

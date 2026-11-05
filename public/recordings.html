@@ -46,10 +46,19 @@
     .band div.current { z-index: 1; background: var(--current-clip); }
     #playhead { position: absolute; top: 0; bottom: 0; left: calc(var(--label-width) + (100% - var(--label-width)) * var(--position, 0)); width: 2px; margin-left: -1px; background: var(--text); pointer-events: none; }
     #playhead::before { content: ""; position: absolute; top: 8px; left: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--text); }
-    #transport { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; margin-top: 10px; }
-    .transport-group { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
-    #transport button { min-width: 44px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
-    #transport button:hover { border-color: var(--muted); }
+    #cache-dialog { width: min(440px, calc(100vw - 32px)); padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
+    #cache-dialog::backdrop { background: rgba(0, 0, 0, .7); }
+    #cache-dialog h2 { margin: 0 0 12px; font-size: 16px; }
+    #cache-dialog table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    #cache-dialog th, #cache-dialog td { padding: 4px 0; font-weight: 400; text-align: right; }
+    #cache-dialog th:first-child, #cache-dialog td:first-child { text-align: left; }
+    #cache-dialog thead th { color: var(--muted); font-size: 12px; }
+    #cache-summary { margin: 0 0 12px; font-size: 14px; }
+    #cache-summary div { display: flex; justify-content: space-between; padding: 2px 0; }
+    #cache-summary .total { font-weight: 600; }
+    #cache-days-title { margin: 0 0 4px; color: var(--muted); font-size: 13px; }
+    #cache-days { max-height: 50vh; overflow-y: auto; }
+    #cache-close { display: block; margin: 12px 0 0 auto; padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
     #error { margin-top: 16px; color: var(--bad); }
     #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 452px), 1fr)); gap: 12px; margin-top: 16px; }
     .camera { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
@@ -84,7 +93,8 @@
         <div id="camera-list"></div>
         <hr>
         <button id="clear-cache" type="button">Clear cached queries</button>
-        <button id="clear-thumbnails" type="button">Clear thumbnails</button>
+        <button id="clear-thumbnails" type="button">Clear cached thumbnails</button>
+        <button id="cache-info" type="button">Cache info</button>
       </div>
     </details>
   </header>
@@ -101,25 +111,18 @@
           <div id="playhead"></div>
         </div>
         <div id="thumbnail-status"></div>
-        <div id="transport">
-          <div class="transport-group" role="group" aria-label="Skip back">
-            <button type="button" data-skip="-3600" aria-label="Back 1 hour">&laquo; 1h</button>
-            <button type="button" data-skip="-900" aria-label="Back 15 minutes">&laquo; 15m</button>
-            <button type="button" data-skip="-300" aria-label="Back 5 minutes">&laquo; 5m</button>
-            <button type="button" data-skip="-60" aria-label="Back 1 minute">&laquo; 1m</button>
-          </div>
-          <div class="transport-group" role="group" aria-label="Skip forward">
-            <button type="button" data-skip="60" aria-label="Forward 1 minute">1m &raquo;</button>
-            <button type="button" data-skip="300" aria-label="Forward 5 minutes">5m &raquo;</button>
-            <button type="button" data-skip="900" aria-label="Forward 15 minutes">15m &raquo;</button>
-            <button type="button" data-skip="3600" aria-label="Forward 1 hour">1h &raquo;</button>
-          </div>
-        </div>
       </div>
     </div>
     <div id="error" hidden></div>
     <div id="grid"></div>
   </main>
+  <dialog id="cache-dialog" aria-labelledby="cache-title">
+    <h2 id="cache-title">Cache info</h2>
+    <div id="cache-summary"></div>
+    <p id="cache-days-title">Thumbnails by day</p>
+    <div id="cache-days"></div>
+    <button id="cache-close" type="button">Close</button>
+  </dialog>
   <template id="camera-template">
     <article class="camera">
       <div class="frame"></div>
@@ -461,6 +464,68 @@
       }
     }
 
+    function formatBytes(bytes) {
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+      if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+      return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+    }
+
+    function summaryRow(label, value, className = '') {
+      const row = document.createElement('div');
+      row.className = className;
+      const name = document.createElement('span');
+      name.textContent = label;
+      const amount = document.createElement('span');
+      amount.textContent = value;
+      row.append(name, amount);
+      return row;
+    }
+
+    function tableRow(cells, tag) {
+      const row = document.createElement('tr');
+      row.append(...cells.map((text) => {
+        const cell = document.createElement(tag);
+        cell.textContent = text;
+        return cell;
+      }));
+      return row;
+    }
+
+    async function showCacheInfo() {
+      const summary = document.getElementById('cache-summary');
+      const list = document.getElementById('cache-days');
+      summary.replaceChildren(summaryRow('Loading…', ''));
+      list.replaceChildren();
+      document.getElementById('cache-dialog').showModal();
+      try {
+        const res = await fetch('/api/cache');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        const files = data.days.reduce((total, day) => total + day.files, 0);
+        const bytes = data.days.reduce((total, day) => total + day.bytes, 0);
+        summary.replaceChildren(
+          summaryRow('Total', formatBytes(data.queryBytes + bytes), 'total'),
+          summaryRow('Thumbnails', `${files.toLocaleString()} files, ${formatBytes(bytes)}`),
+          summaryRow('Cached queries', formatBytes(data.queryBytes)),
+          summaryRow('Free disk space', data.diskFreeBytes === null ? 'Unknown' : `${formatBytes(data.diskFreeBytes)} of ${formatBytes(data.diskTotalBytes)}`),
+        );
+        if (!data.days.length) {
+          list.textContent = 'None';
+          return;
+        }
+        const table = document.createElement('table');
+        const head = document.createElement('thead');
+        head.append(tableRow(['Day', 'Files', 'Size'], 'th'));
+        const body = document.createElement('tbody');
+        body.append(...data.days.map(({ date, files: dayFiles, bytes: dayBytes }) => tableRow([date, dayFiles.toLocaleString(), formatBytes(dayBytes)], 'td')));
+        table.append(head, body);
+        list.replaceChildren(table);
+      } catch (err) {
+        summary.replaceChildren(summaryRow(err.message, ''));
+      }
+    }
+
     function showThumbnailError(err) {
       document.getElementById('thumbnail-status').textContent = err.message;
     }
@@ -762,10 +827,15 @@
     }
 
     document.addEventListener('click', (event) => {
-      if (!cameraMenu.contains(event.target)) cameraMenu.open = false;
+      if (!cameraMenu.contains(event.target) && !document.getElementById('cache-dialog').open) cameraMenu.open = false;
     });
     clearCacheButton.addEventListener('click', clearCache);
     document.getElementById('clear-thumbnails').addEventListener('click', clearThumbnails);
+    document.getElementById('cache-info').addEventListener('click', showCacheInfo);
+    document.getElementById('cache-close').addEventListener('click', () => document.getElementById('cache-dialog').close());
+    document.getElementById('cache-dialog').addEventListener('click', (event) => {
+      if (event.target === event.currentTarget) event.currentTarget.close();
+    });
     timelineScale.append(...SCALE_HOURS.map((hour) => {
       const label = document.createElement('span');
       label.textContent = hour;
@@ -781,12 +851,6 @@
       if (timelineBody.hasPointerCapture(event.pointerId)) setTimeFromPointer(event);
     });
     timelineBody.addEventListener('keydown', moveTimeWithKeys);
-    for (const button of document.querySelectorAll('[data-skip]')) {
-      button.addEventListener('click', () => {
-        stopPlayback();
-        setTime(timelineSeconds + Number(button.dataset.skip));
-      });
-    }
     setTime(0);
 
     showWithVideo(yearButtons, []);

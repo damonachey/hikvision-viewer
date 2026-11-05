@@ -178,6 +178,25 @@ export function createThumbnailBuilder({ nvr, directory, listCameras, listRecord
       await rm(directory, { recursive: true, force: true });
     },
 
+    // How many thumbnails each day has, and their size in bytes.
+    async info() {
+      const days = new Map();
+      for (const cameraId of await readdir(directory).catch(() => [])) {
+        for (const date of await readdir(path.join(directory, cameraId)).catch(() => [])) {
+          const day = days.get(date) ?? { date, files: 0, bytes: 0 };
+          days.set(date, day);
+          for (const name of await readdir(dayFolder(cameraId, date)).catch(() => [])) {
+            if (!name.endsWith('.jpg')) continue;
+            const file = await stat(path.join(dayFolder(cameraId, date), name)).catch(() => null);
+            if (!file) continue;
+            day.files++;
+            day.bytes += file.size;
+          }
+        }
+      }
+      return [...days.values()].filter(({ files }) => files > 0).sort((a, b) => a.date.localeCompare(b.date));
+    },
+
     // The start times with a thumbnail for each camera, in seconds since midnight.
     async list(cameraIds, date) {
       const cameras = {};
