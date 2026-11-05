@@ -33,11 +33,11 @@ A Node server logs in to the NVR and passes the images and video to a single web
    npm start
    ```
 
-5. Open the address printed in the terminal, which is http://127.0.0.1:9999 if you keep the example port.
+5. Open the address printed in the terminal, which is http://127.0.0.1:3000 unless you set `PORT`.
 
 ## Configuration
 
-Settings live in `.env`, which git ignores. Restart the app after changing them.
+Settings live in `.env`, which git ignores. Settings with a default are commented out in `.env.example`, so uncomment one to change it. Restart the app after changing them.
 
 | Setting | Required | Default | Description |
 |---|---|---|---|
@@ -47,16 +47,18 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 | `NVR_RTSP_PORT` | No | `554` | RTSP port on the NVR, used for live video |
 | `NVR_ALLOW_SELF_SIGNED` | No | `false` | Set to `true` if `NVR_URL` is `https` and the NVR uses a self-signed certificate |
 | `HOST` | No | `127.0.0.1` | Address the app listens on |
-| `PORT` | No | `3000` | Port the app listens on (`.env.example` sets `9999`) |
+| `PORT` | No | `3000` | Port the app listens on |
 | `CACHE_DIR` | No | `cache` | Folder for remembered NVR answers, which the app must be able to write to |
-| `CACHE_YEARS_HOURS` | No | `24` | How long to remember which years have video. `0` turns this cache off. |
-| `CACHE_MONTHS_HOURS` | No | `24` | How long to remember which months have video. `0` turns this cache off. |
-| `CACHE_DAYS_HOURS` | No | `24` | How long to remember which days have video. `0` turns this cache off. |
+| `CACHE_YEARS_HOURS` | No | `24` | How long to remember whether a past year has video. `0` turns this cache off. |
+| `CACHE_MONTHS_HOURS` | No | `24` | How long to remember whether another month has video. `0` turns this cache off. |
+| `CACHE_DAYS_HOURS` | No | `24` | How long to remember which days of another month have video. `0` turns this cache off. |
+| `CACHE_RECORDINGS_HOURS` | No | `24` | How long to remember the list of recordings for another day. `0` turns this cache off. |
+| `CACHE_TODAY_MINUTES` | No | `5` | How long to remember all of those for the current year, month and day, which are still gaining video. `0` turns this cache off. |
 
 ## Using the Live page
 
-- The links at the top of the page switch between **Live** and **Recordings**. The **Recordings** page can't play video yet. Its rows show the last 10 years, then the selected year's months, then the selected month's days, all brighter where the ticked cameras have video. Its gear button keeps a separate list of cameras from this page's.
-- The server saves each answer in `query-cache.json` in `CACHE_DIR` to spare the NVR, including across restarts. New video can take as long as `CACHE_YEARS_HOURS`, `CACHE_MONTHS_HOURS` or `CACHE_DAYS_HOURS` to show. **Clear cached queries** under the **Recordings** page's gear button asks the NVR again.
+- The links at the top of the page switch between **Live** and **Recordings**. The **Recordings** page can't play video yet. Its rows show the last 10 years, then the selected year's months, then the selected month's days, all brighter where the ticked cameras have video. Under them, each ticked camera has a band showing when it recorded that day, with one bar across all the bands that you drag to pick a time. Its gear button keeps a separate list of cameras from this page's.
+- The server saves each answer in `query-cache.json` in `CACHE_DIR` to spare the NVR, including across restarts. New video can take as long as the matching `CACHE_` setting to show. **Clear cached queries** under the **Recordings** page's gear button asks the NVR again.
 - The gear button lets you tick which cameras to show. Hidden cameras aren't requested from the NVR, and new cameras appear by default.
 - **Refresh** gets new snapshots from every shown camera.
 - The list next to **Refresh** sets the auto refresh, which repeats that every 1, 5, 30 or 60 seconds. A refresh is skipped if the last one is still loading, the tab is in the background or a full-size view is open.
@@ -101,7 +103,7 @@ These steps run the app on Alpine Linux, such as in a Proxmox LXC container. The
    npm ci --omit=dev
    ```
 
-2. Create a user to run it, and its config. Set `HOST=0.0.0.0` in `.env` so other machines can connect, and read the Security section first. Also set `CACHE_DIR=/var/lib/hikvision-viewer`, which the service creates, because the service user can't write to the install folder:
+2. Create a user to run it, and its config. Set `HOST=0.0.0.0` in `.env` so other machines can connect, and read the Security section first. Also uncomment and set `CACHE_DIR=/var/lib/hikvision-viewer`, which the service creates, because the service user can't write to the install folder:
 
    ```sh
    addgroup -S hikvision
@@ -128,9 +130,10 @@ To update it, run `git pull` and `npm ci --omit=dev` in `/opt/hikvision-viewer`,
 |---|---|
 | `GET /api/cameras` | JSON list of the cameras, each with `id`, `name` and `online` |
 | `GET /api/cameras/:id/snapshot` | The camera's current image at the NVR's default size. Add `?full=1` for the highest resolution the NVR offers. |
-| `GET /api/recordings/years?cameras=1,2` | JSON list of the years, from the last 10, with main-stream video from any of those cameras. Sends the NVR one search per year, and remembers each answer for `CACHE_YEARS_HOURS`. |
-| `GET /api/recordings/months?cameras=1,2&year=2026` | JSON list of that year's months, numbered from 1, with main-stream video from any of those cameras. Sends the NVR one search per month, skipped if the year has no video, and remembers each answer for `CACHE_MONTHS_HOURS`. |
-| `GET /api/recordings/days?cameras=1,2&year=2026&month=11` | JSON list of that month's days with main-stream video from any of those cameras. Sends the NVR one request per camera, skipped if the month has no video, and remembers each answer for `CACHE_DAYS_HOURS`. |
+| `GET /api/recordings/years?cameras=1,2` | JSON list of the years, from the last 10, with main-stream video from any of those cameras. Sends the NVR one search per year, and remembers each answer for `CACHE_YEARS_HOURS`, or `CACHE_TODAY_MINUTES` for the current year. |
+| `GET /api/recordings/months?cameras=1,2&year=2026` | JSON list of that year's months, numbered from 1, with main-stream video from any of those cameras. Sends the NVR one search per month, skipped if the year has no video, and remembers each answer for `CACHE_MONTHS_HOURS`, or `CACHE_TODAY_MINUTES` for the current month. |
+| `GET /api/recordings/days?cameras=1,2&year=2026&month=11` | JSON list of that month's days with main-stream video from any of those cameras. Sends the NVR one request per camera, skipped if the month has no video, and remembers each answer for `CACHE_DAYS_HOURS`, or `CACHE_TODAY_MINUTES` for the current month. |
+| `GET /api/recordings/list?cameras=1,2&year=2026&month=11&day=3` | JSON with each camera's recordings that day. Each has `start` and `end` in seconds since midnight, and a `type`. Sends the NVR at least one search per camera, skipped for days without video, and remembers each answer for `CACHE_RECORDINGS_HOURS`, or `CACHE_TODAY_MINUTES` for today. |
 | `DELETE /api/cache` | Forgets the remembered NVR answers |
 | WebSocket `/api/cameras/:id/live?stream=main` or `sub` | The camera's stream as fragmented MP4, after a JSON message with its codec. Only same-origin pages can connect, and the server allows 16 streams at once. It pings every 15 seconds and ends a stream whose viewer stops answering. |
 

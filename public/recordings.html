@@ -33,7 +33,18 @@
     .row button.no-video[aria-pressed="true"] { background: var(--dim); color: var(--text); }
     #years button { font-size: 20px; }
     #days button { padding: 4px 0; }
-    #time { width: min(100%, 1116px); margin-top: 16px; accent-color: var(--muted); }
+    #timeline { width: min(100%, 1116px); margin-top: 8px; --label-width: 96px; }
+    #timeline-time { margin-bottom: 4px; font-variant-numeric: tabular-nums; font-weight: 600; text-align: center; }
+    #timeline-body { position: relative; padding-top: 18px; outline-offset: 4px; touch-action: none; cursor: ew-resize; user-select: none; }
+    #timeline-scale { position: absolute; top: 0; right: 0; left: var(--label-width); height: 18px; color: var(--muted); font-size: 11px; }
+    #timeline-scale span { position: absolute; transform: translateX(-50%); }
+    .band-row { display: grid; grid-template-columns: var(--label-width) 1fr; align-items: center; margin-top: 2px; }
+    .band-name { overflow: hidden; padding-right: 8px; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .band { position: relative; height: 16px; overflow: hidden; border-radius: 3px; background: var(--card); }
+    /* A short clip would otherwise be too thin to see on a whole-day scale. */
+    .band div { position: absolute; top: 0; bottom: 0; min-width: 2px; background: var(--muted); }
+    #playhead { position: absolute; top: 0; bottom: 0; left: calc(var(--label-width) + (100% - var(--label-width)) * var(--position, 0)); width: 2px; margin-left: -1px; background: var(--text); pointer-events: none; }
+    #playhead::before { content: ""; position: absolute; top: 8px; left: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--text); }
     #error { margin-top: 16px; color: var(--bad); }
     #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 452px), 1fr)); gap: 12px; margin-top: 16px; }
     .camera { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
@@ -67,7 +78,14 @@
       <div id="years" class="row" role="group" aria-label="Year"></div>
       <div id="months" class="row" role="group" aria-label="Month"></div>
       <div id="days" class="row" role="group" aria-label="Day"></div>
-      <input id="time" type="range" min="0" max="1439" value="0" aria-label="Time of day">
+      <div id="timeline">
+        <div id="timeline-time" aria-hidden="true"></div>
+        <div id="timeline-body" role="slider" tabindex="0" aria-label="Time of day" aria-valuemin="0" aria-valuemax="86399">
+          <div id="timeline-scale" aria-hidden="true"></div>
+          <div id="bands"></div>
+          <div id="playhead"></div>
+        </div>
+      </div>
     </div>
     <div id="error" hidden></div>
     <div id="grid"></div>
@@ -110,14 +128,21 @@
     const yearButtons = buildRow('years', years, 'year', (year) => year, async () => {
       showWithVideo(monthButtons, []);
       showWithVideo(dayButtons, []);
+      showBands({});
       await loadMonths();
       await loadDays();
+      await loadBands();
     });
-    const monthButtons = buildRow('months', months, 'month', (month) => monthFormat.format(new Date(2000, month, 1)), () => {
+    const monthButtons = buildRow('months', months, 'month', (month) => monthFormat.format(new Date(2000, month, 1)), async () => {
       showWithVideo(dayButtons, []);
-      loadDays();
+      showBands({});
+      await loadDays();
+      await loadBands();
     });
-    const dayButtons = buildRow('days', days, 'day', (day) => day);
+    const dayButtons = buildRow('days', days, 'day', (day) => day, () => {
+      showBands({});
+      loadBands();
+    });
 
     function render() {
       const lastDay = new Date(selected.year, selected.month + 1, 0).getDate();
@@ -149,8 +174,15 @@
     const errorBox = document.getElementById('error');
     const hiddenCameras = readHiddenCameras();
     let cameras = [];
+    const SECONDS_PER_DAY = 24 * 60 * 60;
+    const SCALE_HOURS = [0, 3, 6, 9, 12, 15, 18, 21, 24];
+    const bands = document.getElementById('bands');
+    const timelineBody = document.getElementById('timeline-body');
+    const timelineScale = document.getElementById('timeline-scale');
     const latestRowRequest = {};
     let videoRowsTimer;
+    let bandRecordings = {};
+    let timelineSeconds = 0;
 
     // Saves the hidden cameras rather than the shown ones, so new cameras appear by default.
     function readHiddenCameras() {
@@ -167,6 +199,7 @@
       else hiddenCameras.add(camera.id);
       try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hiddenCameras])); } catch {}
       card.hidden = !shown;
+      showBands(bandRecordings);
       // Wait in case more cameras are about to change, since each load searches every year and month.
       clearTimeout(videoRowsTimer);
       videoRowsTimer = setTimeout(loadVideoRows, VIDEO_ROWS_DELAY_MS);
@@ -219,10 +252,76 @@
       });
     }
 
+    function loadBands() {
+      const date = `year=${selected.year}&month=${selected.month + 1}&day=${selected.day}`;
+      return loadRow('bands', `/api/recordings/list?cameras=${shownCameraIds()}&${date}`, (data) => showBands(data.cameras));
+    }
+
     async function loadVideoRows() {
       await loadYears();
       await loadMonths();
       await loadDays();
+      await loadBands();
+    }
+
+    function formatTime(seconds) {
+      return [seconds / 3600, (seconds % 3600) / 60, seconds % 60]
+        .map((part) => String(Math.floor(part)).padStart(2, '0'))
+        .join(':');
+    }
+
+    function showBands(recordings) {
+      bandRecordings = recordings;
+      const shown = cameras.filter((camera) => !hiddenCameras.has(camera.id));
+      bands.replaceChildren(...shown.map((camera) => {
+        const row = document.createElement('div');
+        row.className = 'band-row';
+        const name = document.createElement('span');
+        name.className = 'band-name';
+        name.textContent = camera.name;
+        name.title = camera.name;
+        const band = document.createElement('div');
+        band.className = 'band';
+        band.append(...(recordings[camera.id] ?? []).map(({ start, end }) => {
+          const clip = document.createElement('div');
+          clip.style.left = `${(start / SECONDS_PER_DAY) * 100}%`;
+          clip.style.width = `${((end - start) / SECONDS_PER_DAY) * 100}%`;
+          clip.title = `${formatTime(start)} to ${formatTime(end)}`;
+          return clip;
+        }));
+        row.append(name, band);
+        return row;
+      }));
+    }
+
+    function setTime(seconds) {
+      timelineSeconds = Math.min(Math.max(Math.round(seconds), 0), SECONDS_PER_DAY - 1);
+      const text = formatTime(timelineSeconds);
+      timelineBody.style.setProperty('--position', timelineSeconds / SECONDS_PER_DAY);
+      timelineBody.setAttribute('aria-valuenow', timelineSeconds);
+      timelineBody.setAttribute('aria-valuetext', text);
+      document.getElementById('timeline-time').textContent = text;
+    }
+
+    function setTimeFromPointer(event) {
+      const { left, width } = timelineScale.getBoundingClientRect();
+      setTime(((event.clientX - left) / width) * SECONDS_PER_DAY);
+    }
+
+    function moveTimeWithKeys(event) {
+      const moves = {
+        ArrowLeft: timelineSeconds - 60,
+        ArrowRight: timelineSeconds + 60,
+        ArrowDown: timelineSeconds - 60,
+        ArrowUp: timelineSeconds + 60,
+        PageDown: timelineSeconds - 3600,
+        PageUp: timelineSeconds + 3600,
+        Home: 0,
+        End: SECONDS_PER_DAY - 1,
+      };
+      if (!Object.hasOwn(moves, event.key)) return;
+      event.preventDefault();
+      setTime(moves[event.key]);
     }
 
     function addCameraOption(camera, card) {
@@ -287,6 +386,21 @@
       if (!cameraMenu.contains(event.target)) cameraMenu.open = false;
     });
     clearCacheButton.addEventListener('click', clearCache);
+    timelineScale.append(...SCALE_HOURS.map((hour) => {
+      const label = document.createElement('span');
+      label.textContent = hour;
+      label.style.left = `${(hour / 24) * 100}%`;
+      return label;
+    }));
+    timelineBody.addEventListener('pointerdown', (event) => {
+      timelineBody.setPointerCapture(event.pointerId);
+      setTimeFromPointer(event);
+    });
+    timelineBody.addEventListener('pointermove', (event) => {
+      if (timelineBody.hasPointerCapture(event.pointerId)) setTimeFromPointer(event);
+    });
+    timelineBody.addEventListener('keydown', moveTimeWithKeys);
+    setTime(0);
 
     showWithVideo(yearButtons, []);
     showWithVideo(monthButtons, []);

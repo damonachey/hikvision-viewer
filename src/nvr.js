@@ -7,6 +7,9 @@ const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_CONCURRENT_REQUESTS = 4;
 
 const HASHES = { MD5: 'md5', 'SHA-256': 'sha256' };
+// The most a DS-7608N-E2/8P returns per search, from its maxSearchMatchResults.
+const SEARCH_PAGE_SIZE = 64;
+const SECONDS_PER_DAY = 24 * 60 * 60;
 
 export const CREDENTIALS_MESSAGE = 'The NVR rejected the username or password. Fix .env and restart the app.';
 
@@ -75,16 +78,16 @@ function xmlValue(xml, tag) {
     .replaceAll('&amp;', '&');
 }
 
-// Asks for one main-stream recording from any of the cameras, which is enough to show the time span has video.
-function recordingSearch(cameraIds, startDay, endDay) {
+// Searches the cameras' main-stream recordings. One result is enough to show the time span has video.
+function recordingSearch(cameraIds, startDay, endDay, { maxResults = 1, position = 0 } = {}) {
   const tracks = cameraIds.map((id) => `<trackID>${id}01</trackID>`).join('');
   return `<?xml version="1.0" encoding="utf-8"?>
 <CMSearchDescription>
   <searchID>${crypto.randomUUID()}</searchID>
   <trackList>${tracks}</trackList>
   <timeSpanList><timeSpan><startTime>${startDay}T00:00:00Z</startTime><endTime>${endDay}T23:59:59Z</endTime></timeSpan></timeSpanList>
-  <maxResults>1</maxResults>
-  <searchResultPostion>0</searchResultPostion>
+  <maxResults>${maxResults}</maxResults>
+  <searchResultPostion>${position}</searchResultPostion>
   <metadataList><metadataDescriptor>//recordType.meta.std-cgi.com</metadataDescriptor></metadataList>
 </CMSearchDescription>`;
 }
@@ -238,6 +241,29 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
       const monthText = String(month).padStart(2, '0');
       const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
       return hasRecordings(cameraIds, `${year}-${monthText}-01`, `${year}-${monthText}-${lastDay}`);
+    },
+
+    // Start and end are seconds since the day's midnight. The NVR marks its times as UTC
+    // but they're local, so they're compared with a midnight marked the same way.
+    async recordingsOnDay(cameraId, day) {
+      const midnight = Date.parse(`${day}T00:00:00Z`);
+      const secondsIntoDay = (time) => Math.min(Math.max((Date.parse(time) - midnight) / 1000, 0), SECONDS_PER_DAY);
+      const recordings = [];
+      while (true) {
+        const xml = await searchInTurn(
+          '/ISAPI/ContentMgmt/search',
+          recordingSearch([cameraId], day, day, { maxResults: SEARCH_PAGE_SIZE, position: recordings.length }),
+        );
+        const items = xmlBlocks(xml, 'searchMatchItem');
+        for (const item of items) {
+          recordings.push({
+            start: secondsIntoDay(xmlValue(item, 'startTime')),
+            end: secondsIntoDay(xmlValue(item, 'endTime')),
+            type: xmlValue(item, 'metadataDescriptor')?.split('/').pop() ?? 'unknown',
+          });
+        }
+        if (!items.length || xmlValue(xml, 'responseStatusStrg') !== 'MORE') return recordings;
+      }
     },
 
     // Answers for one camera at a time, because this request takes a single track.

@@ -5,20 +5,24 @@ import { createCache } from './cache.js';
 import { attachLiveStreams } from './live.js';
 import { createNvrClient, NvrError } from './nvr.js';
 
-const { NVR_URL, NVR_USER, NVR_PASSWORD, NVR_ALLOW_SELF_SIGNED, NVR_RTSP_PORT = '554', HOST = '127.0.0.1', PORT = '3000', CACHE_DIR = 'cache', CACHE_YEARS_HOURS = '24', CACHE_MONTHS_HOURS = '24', CACHE_DAYS_HOURS = '24' } = process.env;
+const { NVR_URL, NVR_USER, NVR_PASSWORD, NVR_ALLOW_SELF_SIGNED, NVR_RTSP_PORT = '554', HOST = '127.0.0.1', PORT = '3000', CACHE_DIR = 'cache', CACHE_YEARS_HOURS = '24', CACHE_MONTHS_HOURS = '24', CACHE_DAYS_HOURS = '24', CACHE_RECORDINGS_HOURS = '24', CACHE_TODAY_MINUTES = '5' } = process.env;
 
 if (!NVR_URL || !NVR_USER || !NVR_PASSWORD) {
   console.error('Set NVR_URL, NVR_USER and NVR_PASSWORD in .env (see .env.example).');
   process.exit(1);
 }
 
-function cacheLifetimeMs(setting, hours) {
-  if (!hours.trim() || !(Number(hours) >= 0)) {
-    console.error(`Set ${setting} in .env to a number of hours, or 0 to turn that cache off.`);
+function cacheLifetimeMs(setting, amount, unit, unitMs) {
+  if (!amount.trim() || !(Number(amount) >= 0)) {
+    console.error(`Set ${setting} in .env to a number of ${unit}, or 0 to turn that cache off.`);
     process.exit(1);
   }
-  return Number(hours) * 60 * 60 * 1000;
+  return Number(amount) * unitMs;
 }
+
+const HOUR_MS = 60 * 60 * 1000;
+const MINUTE_MS = 60 * 1000;
+const todayLifetimeMs = cacheLifetimeMs('CACHE_TODAY_MINUTES', CACHE_TODAY_MINUTES, 'minutes', MINUTE_MS);
 
 const nvr = createNvrClient({
   url: NVR_URL,
@@ -33,11 +37,25 @@ const YEARS_BACK = 10;
 const queryCache = createCache({
   file: path.join(CACHE_DIR, 'query-cache.json'),
   lifetimesMs: {
-    recordingYear: cacheLifetimeMs('CACHE_YEARS_HOURS', CACHE_YEARS_HOURS),
-    recordingMonth: cacheLifetimeMs('CACHE_MONTHS_HOURS', CACHE_MONTHS_HOURS),
-    recordingDays: cacheLifetimeMs('CACHE_DAYS_HOURS', CACHE_DAYS_HOURS),
+    recordingYear: cacheLifetimeMs('CACHE_YEARS_HOURS', CACHE_YEARS_HOURS, 'hours', HOUR_MS),
+    recordingMonth: cacheLifetimeMs('CACHE_MONTHS_HOURS', CACHE_MONTHS_HOURS, 'hours', HOUR_MS),
+    recordingDays: cacheLifetimeMs('CACHE_DAYS_HOURS', CACHE_DAYS_HOURS, 'hours', HOUR_MS),
+    recordings: cacheLifetimeMs('CACHE_RECORDINGS_HOURS', CACHE_RECORDINGS_HOURS, 'hours', HOUR_MS),
+    recordingYearNow: todayLifetimeMs,
+    recordingMonthNow: todayLifetimeMs,
+    recordingDaysNow: todayLifetimeMs,
+    recordingsNow: todayLifetimeMs,
   },
 });
+
+// The current year, month and day are still gaining video, so they refresh sooner.
+function cacheType(type, year, month, day) {
+  const now = new Date();
+  const isCurrent = year === now.getFullYear()
+    && (month === undefined || month === now.getMonth() + 1)
+    && (day === undefined || day === now.getDate());
+  return isCurrent ? `${type}Now` : type;
+}
 
 const pages = new Map([
   ['/', new URL('../public/index.html', import.meta.url)],
@@ -54,7 +72,7 @@ function cameraKey(cameraIds) {
 }
 
 function yearHasRecordings(cameraIds, year) {
-  return queryCache.get('recordingYear', `${year}:${cameraKey(cameraIds)}`, () => nvr.yearHasRecordings(cameraIds, year));
+  return queryCache.get(cacheType('recordingYear', year), `${year}:${cameraKey(cameraIds)}`, () => nvr.yearHasRecordings(cameraIds, year));
 }
 
 async function yearsWithRecordings(cameraIds) {
@@ -75,10 +93,15 @@ async function monthsWithRecordings(cameraIds, year) {
   const months = [];
   // Sequential so a wrong password costs one failed login, not one per month.
   for (let month = 1; month <= 12; month++) {
-    const hasRecordings = await queryCache.get('recordingMonth', `${year}-${month}:${key}`, () => nvr.monthHasRecordings(cameraIds, year, month));
+    const hasRecordings = await queryCache.get(cacheType('recordingMonth', year, month), `${year}-${month}:${key}`, () => nvr.monthHasRecordings(cameraIds, year, month));
     if (hasRecordings) months.push(month);
   }
   return months;
+}
+
+function cameraDaysWithRecordings(cameraId, year, month) {
+  // Saved per camera, so another mix of cameras can reuse these answers.
+  return queryCache.get(cacheType('recordingDays', year, month), `${year}-${month}:${cameraId}`, () => nvr.daysWithRecordings(cameraId, year, month));
 }
 
 async function daysWithRecordings(cameraIds, year, month) {
@@ -86,13 +109,26 @@ async function daysWithRecordings(cameraIds, year, month) {
   if (!(await monthsWithRecordings(cameraIds, year)).includes(month)) return [];
 
   const days = new Set();
-  // Saved per camera, so another mix of cameras can reuse these answers.
   // Sequential so a wrong password costs one failed login, not one per camera.
   for (const cameraId of new Set(cameraIds)) {
-    const cameraDays = await queryCache.get('recordingDays', `${year}-${month}:${cameraId}`, () => nvr.daysWithRecordings(cameraId, year, month));
-    for (const day of cameraDays) days.add(day);
+    for (const day of await cameraDaysWithRecordings(cameraId, year, month)) days.add(day);
   }
   return [...days].sort((a, b) => a - b);
+}
+
+async function recordingsOnDay(cameraIds, year, month, day) {
+  const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const cameras = {};
+  // Days without video can skip their searches.
+  const dayHasVideo = (await daysWithRecordings(cameraIds, year, month)).includes(day);
+  // Sequential so a wrong password costs one failed login, not one per camera.
+  for (const cameraId of new Set(cameraIds)) {
+    const hasVideo = dayHasVideo && (await cameraDaysWithRecordings(cameraId, year, month)).includes(day);
+    cameras[cameraId] = hasVideo
+      ? await queryCache.get(cacheType('recordings', year, month, day), `${date}:${cameraId}`, () => nvr.recordingsOnDay(cameraId, date))
+      : [];
+  }
+  return cameras;
 }
 
 function isValidYear(text) {
@@ -128,7 +164,7 @@ async function handle(req, res) {
     return res.end(body);
   }
 
-  if (['/api/recordings/years', '/api/recordings/months', '/api/recordings/days'].includes(pathname)) {
+  if (['/api/recordings/years', '/api/recordings/months', '/api/recordings/days', '/api/recordings/list'].includes(pathname)) {
     const cameras = searchParams.get('cameras') ?? '';
     if (!/^(\d+(,\d+)*)?$/.test(cameras)) return sendJson(res, 400, { error: 'cameras must be a list of camera ids' });
     const cameraIds = cameras ? cameras.split(',') : [];
@@ -146,7 +182,14 @@ async function handle(req, res) {
 
     const month = searchParams.get('month');
     if (!/^(1[0-2]|[1-9])$/.test(month ?? '')) return sendJson(res, 400, { error: 'month must be from 1 to 12' });
-    return sendJson(res, 200, { days: cameras ? await daysWithRecordings(cameraIds, Number(year), Number(month)) : [] });
+
+    if (pathname === '/api/recordings/days') {
+      return sendJson(res, 200, { days: cameras ? await daysWithRecordings(cameraIds, Number(year), Number(month)) : [] });
+    }
+
+    const day = searchParams.get('day');
+    if (!/^([1-9]|[12]\d|3[01])$/.test(day ?? '')) return sendJson(res, 400, { error: 'day must be from 1 to 31' });
+    return sendJson(res, 200, { cameras: cameras ? await recordingsOnDay(cameraIds, Number(year), Number(month), Number(day)) : {} });
   }
 
   sendJson(res, 404, { error: 'Not found' });
