@@ -45,6 +45,12 @@
     .band div { position: absolute; top: 0; bottom: 0; min-width: 2px; background: var(--muted); }
     #playhead { position: absolute; top: 0; bottom: 0; left: calc(var(--label-width) + (100% - var(--label-width)) * var(--position, 0)); width: 2px; margin-left: -1px; background: var(--text); pointer-events: none; }
     #playhead::before { content: ""; position: absolute; top: 8px; left: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--text); }
+    #transport { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; margin-top: 10px; }
+    .transport-group { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+    #transport button { min-width: 44px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+    #transport button:hover { border-color: var(--muted); }
+    #transport svg { display: block; margin: 2px auto; }
+    #transport button[aria-pressed="true"] { background: var(--text); color: var(--bg); font-weight: 600; }
     #error { margin-top: 16px; color: var(--bad); }
     #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 452px), 1fr)); gap: 12px; margin-top: 16px; }
     .camera { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
@@ -84,6 +90,33 @@
           <div id="timeline-scale" aria-hidden="true"></div>
           <div id="bands"></div>
           <div id="playhead"></div>
+        </div>
+        <div id="transport">
+          <div class="transport-group" role="group" aria-label="Skip back">
+            <button type="button" aria-label="Back 1 hour">&laquo; 1h</button>
+            <button type="button" aria-label="Back 15 minutes">&laquo; 15m</button>
+            <button type="button" aria-label="Back 5 minutes">&laquo; 5m</button>
+            <button type="button" aria-label="Back 1 minute">&laquo; 1m</button>
+          </div>
+          <div class="transport-group" role="group" aria-label="Playback">
+            <button type="button" aria-label="Play" title="Play">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 3v18l15-9z"/></svg>
+            </button>
+            <button type="button" aria-label="Pause" title="Pause">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 3h5v18H5zM14 3h5v18h-5z"/></svg>
+            </button>
+          </div>
+          <div class="transport-group" role="group" aria-label="Skip forward">
+            <button type="button" aria-label="Forward 1 minute">1m &raquo;</button>
+            <button type="button" aria-label="Forward 5 minutes">5m &raquo;</button>
+            <button type="button" aria-label="Forward 15 minutes">15m &raquo;</button>
+            <button type="button" aria-label="Forward 1 hour">1h &raquo;</button>
+          </div>
+          <div id="speeds" class="transport-group" role="group" aria-label="Playback speed">
+            <button type="button" data-speed="0.5" aria-label="Half speed">0.5x</button>
+            <button type="button" data-speed="1" aria-label="Normal speed">1x</button>
+            <button type="button" data-speed="2" aria-label="Double speed">2x</button>
+          </div>
         </div>
       </div>
     </div>
@@ -179,6 +212,7 @@
     const bands = document.getElementById('bands');
     const timelineBody = document.getElementById('timeline-body');
     const timelineScale = document.getElementById('timeline-scale');
+    const speedButtons = document.querySelectorAll('#speeds button');
     const latestRowRequest = {};
     let videoRowsTimer;
     let bandRecordings = {};
@@ -308,6 +342,12 @@
       setTime(((event.clientX - left) / width) * SECONDS_PER_DAY);
     }
 
+    function setSpeed(speed) {
+      for (const button of speedButtons) {
+        button.setAttribute('aria-pressed', button.dataset.speed === speed);
+      }
+    }
+
     function moveTimeWithKeys(event) {
       const moves = {
         ArrowLeft: timelineSeconds - 60,
@@ -400,6 +440,10 @@
       if (timelineBody.hasPointerCapture(event.pointerId)) setTimeFromPointer(event);
     });
     timelineBody.addEventListener('keydown', moveTimeWithKeys);
+    for (const button of speedButtons) {
+      button.addEventListener('click', () => setSpeed(button.dataset.speed));
+    }
+    setSpeed('1');
     setTime(0);
 
     showWithVideo(yearButtons, []);
