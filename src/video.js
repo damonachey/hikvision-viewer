@@ -11,6 +11,7 @@ const MAX_CLIENT_BACKLOG_BYTES = 32 * 1024 * 1024;
 // A viewer that sleeps or loses its network never closes its socket, and FFmpeg
 // would keep pulling from the NVR, so one missed answer ends the stream.
 const PING_INTERVAL_MS = 15_000;
+const SECONDS_PER_DAY = 86_400;
 
 const OUTPUT_ARGS = [
   '-c', 'copy',
@@ -185,9 +186,11 @@ export async function sendRecordingFile(res, nvr, playbackUri, skipSeconds) {
     res.end(JSON.stringify({ error: message }));
   };
 
-  // Both of these are expected once the viewer hangs up.
+  // Expected once the viewer hangs up.
   ffmpeg.stdin.on('error', () => {});
-  download.stream.on('error', () => {});
+  // A lost download wouldn't end FFmpeg's input, so hang up rather than wait forever. That
+  // also shows a saved file as failed, instead of as a complete one that's cut short.
+  download.stream.on('error', () => res.destroy());
   download.stream.pipe(ffmpeg.stdin);
 
   const readInit = (chunk) => {
@@ -223,6 +226,100 @@ export async function sendRecordingFile(res, nvr, playbackUri, skipSeconds) {
   res.on('close', () => {
     download.abort();
     ffmpeg.kill();
+  });
+}
+
+// Saves a stretch of time as one file, feeding each clip's download into FFmpeg in turn. The
+// first FFmpeg cuts by the video's own clock, which includes the time between clips, so the
+// range ends when it should. The second then closes up those gaps.
+export function sendRecordingRange(res, nvr, clips, skipSeconds, seconds) {
+  const spawnFfmpeg = (args) => spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...args], { stdio: 'pipe', windowsHide: true });
+  const cutter = spawnFfmpeg([
+    // Without this, FFmpeg closes the gaps itself and the cut lands in the wrong place.
+    '-dts_delta_threshold', String(SECONDS_PER_DAY),
+    '-f', 'mpeg',
+    '-i', 'pipe:0',
+    '-map', '0:v:0',
+    '-ss', String(skipSeconds),
+    '-t', String(seconds),
+    '-c', 'copy',
+    '-f', 'mpegts',
+    'pipe:1',
+  ]);
+  const joiner = spawnFfmpeg([
+    '-f', 'mpegts',
+    '-i', 'pipe:0',
+    '-c', 'copy',
+    '-f', 'mp4',
+    '-movflags', 'empty_moov+default_base_moof+frag_keyframe',
+    'pipe:1',
+  ]);
+  let download;
+  let finished = false;
+  let stderr = '';
+
+  const stop = () => {
+    finished = true;
+    download?.abort();
+    cutter.kill();
+    joiner.kill();
+  };
+  // A lost download shows as a failed save, instead of as a complete file that's cut short.
+  const fail = (status, message) => {
+    stop();
+    if (res.headersSent) return res.destroy();
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: message }));
+  };
+
+  // Once the cutter has all it needs, the rest of the clips aren't wanted.
+  let cutterClosed = false;
+  const cutterDone = new Promise((resolve) => {
+    cutter.once('close', () => {
+      cutterClosed = true;
+      resolve();
+    });
+  });
+
+  async function feedClips() {
+    for (const clip of clips) {
+      if (finished || cutterClosed) return;
+      download = await nvr.openDownload(clip.playbackUri);
+      const sent = new Promise((resolve, reject) => {
+        download.stream.on('error', reject);
+        download.stream.on('end', resolve);
+      });
+      download.stream.pipe(cutter.stdin, { end: false });
+      await Promise.race([sent, cutterDone]);
+    }
+    cutter.stdin.end();
+  }
+
+  for (const ffmpeg of [cutter, joiner]) {
+    // Expected once FFmpeg has all it needs, or the viewer hangs up.
+    ffmpeg.stdin.on('error', () => {});
+    ffmpeg.stderr.on('data', (chunk) => {
+      stderr = (stderr + chunk).slice(-2000);
+    });
+    ffmpeg.on('error', () => fail(500, 'FFmpeg is not installed on the server'));
+  }
+  cutter.stdout.pipe(joiner.stdin);
+  cutter.on('close', () => download?.abort());
+  joiner.stdout.once('data', (chunk) => {
+    res.writeHead(200, { 'Content-Type': 'video/mp4', 'Cache-Control': 'no-store', 'Content-Disposition': 'attachment' });
+    res.write(chunk);
+    joiner.stdout.pipe(res);
+  });
+  joiner.on('close', () => {
+    if (res.headersSent || finished) return;
+    if (stderr) console.error(`Recording range: ${stderr.trim()}`);
+    fail(404, 'That range has no video');
+  });
+  res.on('close', stop);
+  feedClips().catch((err) => {
+    if (finished || cutterClosed) return;
+    console.error(`Recording range: ${err.message}`);
+    fail(502, 'The NVR stopped sending the recording');
   });
 }
 

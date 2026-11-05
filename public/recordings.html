@@ -59,6 +59,20 @@
     #cache-days-title { margin: 0 0 4px; color: var(--muted); font-size: 13px; }
     #cache-days { max-height: 50vh; overflow-y: auto; }
     #cache-close { display: block; margin: 12px 0 0 auto; padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
+    #download-dialog { width: min(360px, calc(100vw - 32px)); padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
+    #download-dialog::backdrop { background: rgba(0, 0, 0, .7); }
+    #download-dialog h2 { margin: 0 0 12px; font-size: 16px; }
+    #download-dialog label { display: block; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
+    #download-dialog input, #download-dialog select { height: 36px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+    #download-start { display: block; width: 100%; margin-top: 4px; font-variant-numeric: tabular-nums; }
+    .download-length { display: flex; gap: 8px; margin-top: 4px; }
+    #download-amount { flex: 1; min-width: 0; }
+    #download-summary { min-height: 40px; margin: 0 0 12px; font-size: 13px; }
+    #download-summary.failed { color: var(--bad); }
+    .download-actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .download-actions button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
+    .download-actions button:hover:not(:disabled) { border-color: var(--muted); }
+    .download-actions button:disabled { color: var(--dim); cursor: default; }
     #error { margin-top: 16px; color: var(--bad); }
     #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 452px), 1fr)); gap: 12px; margin-top: 16px; }
     .camera { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
@@ -85,13 +99,13 @@
     .full-header button { display: flex; align-items: center; justify-content: center; min-width: 39px; height: 39px; padding: 0 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
     .full-header button:hover:not(:disabled) { border-color: var(--muted); }
     .full-header button:disabled { color: var(--dim); cursor: default; }
-    #full-play, #full-popout { padding: 0; }
+    #full-play, #full-download, #full-popout { padding: 0; }
     #full-time { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
     #full-play .pause-icon, #full-play.playing .play-icon { display: none; }
     #full-play.playing .pause-icon { display: block; }
     #full-speed { height: 39px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
     #full-speed:hover { border-color: var(--muted); }
-    #full-frame { width: 100%; height: auto; max-height: calc(100vh - 150px); }
+    #full-frame { width: 100%; height: auto; max-height: calc(100vh - 150px); cursor: pointer; }
     #full-progress { display: flex; align-items: center; gap: 12px; padding: 8px 10px; }
     #full-seek { flex: 1; min-width: 0; margin: 0; accent-color: var(--current-clip); cursor: pointer; }
     #full-seek:disabled { cursor: default; }
@@ -184,6 +198,13 @@
         <svg class="play-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 3v18l15-9z"/></svg>
         <svg class="pause-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 3h5v18H5zM14 3h5v18h-5z"/></svg>
       </button>
+      <button id="full-download" type="button" aria-label="Download video" title="Download video">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <path d="m7 10 5 5 5-5"/>
+          <path d="M12 15V3"/>
+        </svg>
+      </button>
       <button id="full-popout" type="button" aria-label="Pop out to a new window" title="Pop out to a new window">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M15 3h6v6"/>
@@ -198,6 +219,28 @@
       <input id="full-seek" type="range" min="0" max="0" value="0" aria-label="Position in this clip" title="Position in this clip">
       <span id="full-elapsed"></span>
     </div>
+  </dialog>
+  <dialog id="download-dialog" aria-labelledby="download-title">
+    <form method="dialog">
+      <h2 id="download-title">Download video</h2>
+      <label>Start time
+        <input id="download-start" type="time" step="1" required>
+      </label>
+      <label>Length
+        <div class="download-length">
+          <input id="download-amount" type="number" min="1" step="1" value="1" required aria-label="Length">
+          <select id="download-unit" aria-label="Length unit">
+            <option value="60" selected>minutes</option>
+            <option value="1">seconds</option>
+          </select>
+        </div>
+      </label>
+      <p id="download-summary"></p>
+      <div class="download-actions">
+        <button id="download-cancel" type="button">Cancel</button>
+        <button id="download-save" type="submit">Download</button>
+      </div>
+    </form>
   </dialog>
 
   <script>
@@ -308,6 +351,10 @@
     const fullPlay = document.getElementById('full-play');
     const fullSpeed = document.getElementById('full-speed');
     const fullSeek = document.getElementById('full-seek');
+    const downloadDialog = document.getElementById('download-dialog');
+    const downloadStart = document.getElementById('download-start');
+    const downloadAmount = document.getElementById('download-amount');
+    const downloadUnit = document.getElementById('download-unit');
     const pageParams = new URLSearchParams(location.search);
     const popoutCameraId = pageParams.get('camera');
 
@@ -628,6 +675,7 @@
     function showProgress() {
       const clip = fullCamera && bandRecordings[fullCamera.id]?.[currentClipIndex(fullCamera)];
       fullSeek.disabled = !clip;
+      document.getElementById('full-download').disabled = !clip;
       fullSeek.min = clip?.start ?? 0;
       fullSeek.max = clip?.end ?? 0;
       fullSeek.value = timelineSeconds;
@@ -977,6 +1025,43 @@
       startPlayback(camera);
     }
 
+    // The range the download popup describes, or null if its fields aren't filled in. It stops
+    // at midnight, because the page only has one day's clips.
+    function downloadRange() {
+      const [hours, minutes, seconds = 0] = downloadStart.value.split(':').map(Number);
+      const length = Number(downloadAmount.value) * Number(downloadUnit.value);
+      if (!downloadStart.value || !Number.isInteger(length) || length < 1) return null;
+      const start = hours * 3600 + minutes * 60 + seconds;
+      return { start, length: Math.min(length, SECONDS_PER_DAY - start) };
+    }
+
+    // Time between clips isn't saved, so say how much video the range really holds.
+    function showDownloadSummary() {
+      const range = downloadRange();
+      const clips = (range ? bandRecordings[fullCamera.id] ?? [] : []).filter(({ start, end }) => end > range.start && start < range.start + range.length);
+      const recorded = clips.reduce((total, { start, end }) => total + Math.min(end, range.start + range.length) - Math.max(start, range.start), 0);
+      const summary = document.getElementById('download-summary');
+      summary.classList.toggle('failed', Boolean(range) && !clips.length);
+      if (!range) summary.textContent = '';
+      else if (!clips.length) summary.textContent = 'This range has no video.';
+      else summary.textContent = `About ${formatTime(recorded)} of video from ${clips.length} ${clips.length === 1 ? 'clip' : 'clips'}, at full resolution. Time between clips is left out.`;
+      document.getElementById('download-save').disabled = !clips.length;
+    }
+
+    function openDownloadDialog() {
+      downloadStart.value = formatTime(timelineSeconds);
+      showDownloadSummary();
+      downloadDialog.showModal();
+    }
+
+    function saveDownload() {
+      const { start, length } = downloadRange();
+      const link = document.createElement('a');
+      link.href = `/api/recordings/ranges/${fullCamera.id}/${selectedDate()}?start=${start}&seconds=${length}`;
+      link.download = `${fullCamera.name} ${selectedDate()} ${formatTime(start).replaceAll(':', '-')} ${length}s.mp4`;
+      link.click();
+    }
+
     // Plays from the bar's time in its own window. It's the same window every time, because
     // the NVR plays one recording at a time.
     function popOut(camera) {
@@ -1127,6 +1212,13 @@
       setTime(Number(fullSeek.value));
       startPlayback(fullCamera, true);
     });
+    fullFrame.addEventListener('click', () => fullPlay.click());
+    document.getElementById('full-download').addEventListener('click', openDownloadDialog);
+    for (const field of [downloadStart, downloadAmount, downloadUnit]) {
+      field.addEventListener('input', showDownloadSummary);
+    }
+    downloadDialog.querySelector('form').addEventListener('submit', saveDownload);
+    document.getElementById('download-cancel').addEventListener('click', () => downloadDialog.close());
     document.getElementById('full-close').addEventListener('click', () => fullView.close());
     document.getElementById('full-popout').addEventListener('click', () => {
       // Keep the view open if the browser blocked the new window.

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createCache } from './cache.js';
 import { createNvrClient, NvrError } from './nvr.js';
 import { createThumbnailBuilder } from './thumbnails.js';
-import { attachVideoStreams, sendRecordingFile } from './video.js';
+import { attachVideoStreams, sendRecordingFile, sendRecordingRange } from './video.js';
 
 const { NVR_URL, NVR_USER, NVR_PASSWORD, NVR_ALLOW_SELF_SIGNED, NVR_RTSP_PORT = '554', HOST = '127.0.0.1', PORT = '3000', CACHE_DIR = 'cache', CACHE_YEARS_HOURS = '24', CACHE_MONTHS_HOURS = '24', CACHE_DAYS_HOURS = '24', CACHE_RECORDINGS_HOURS = '24', CACHE_TODAY_MINUTES = '5' } = process.env;
 
@@ -23,6 +23,10 @@ function cacheLifetimeMs(setting, amount, unit, unitMs) {
 
 const HOUR_MS = 60 * 60 * 1000;
 const MINUTE_MS = 60 * 1000;
+const SECONDS_PER_DAY = 24 * 60 * 60;
+// A clip's video can begin several seconds before its listed time, which would end a saved
+// range that much early.
+const RANGE_END_MARGIN_SECONDS = 8;
 const todayLifetimeMs = cacheLifetimeMs('CACHE_TODAY_MINUTES', CACHE_TODAY_MINUTES, 'minutes', MINUTE_MS);
 
 const nvr = createNvrClient({
@@ -224,6 +228,22 @@ async function handle(req, res) {
     const clip = recordings[cameraId].find((recording) => recording.start === Number(start));
     if (!clip) return sendJson(res, 404, { error: 'That recording was not found' });
     return sendRecordingFile(res, nvr, clip.playbackUri, Number(skip));
+  }
+
+  const rangeRoute = pathname.match(/^\/api\/recordings\/ranges\/(\d+)\/(\d{4})-(\d{2})-(\d{2})$/);
+  if (rangeRoute) {
+    const [, cameraId, year, month, day] = rangeRoute;
+    const start = Number(searchParams.get('start'));
+    const seconds = Number(searchParams.get('seconds'));
+    if (!Number.isInteger(start) || start < 0 || start >= SECONDS_PER_DAY) return sendJson(res, 400, { error: 'start must be a number of seconds into the day' });
+    if (!Number.isInteger(seconds) || seconds < 1 || seconds > SECONDS_PER_DAY) return sendJson(res, 400, { error: 'seconds must be from 1 to 86400' });
+    if (!isValidYear(year)) return sendJson(res, 400, { error: YEAR_ERROR });
+    if (!isValidMonth(String(Number(month)))) return sendJson(res, 400, { error: MONTH_ERROR });
+    if (!isValidDay(String(Number(day)))) return sendJson(res, 400, { error: DAY_ERROR });
+    const recordings = await recordingsOnDay([cameraId], Number(year), Number(month), Number(day));
+    const clips = recordings[cameraId].filter((clip) => clip.end > start && clip.start < start + seconds);
+    if (!clips.length) return sendJson(res, 404, { error: 'That range has no video' });
+    return sendRecordingRange(res, nvr, clips, Math.max(start - clips[0].start, 0), seconds + RANGE_END_MARGIN_SECONDS);
   }
 
   if (pages.has(pathname)) {

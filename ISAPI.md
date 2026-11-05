@@ -132,6 +132,8 @@ Tested behaviour:
 - `GET /ISAPI/ContentMgmt/download/capabilities` returns HTTP 400 even though downloads work.
 - A clip's first bytes arrive in about 25 ms. FFmpeg can copy the video into fragmented MP4 as it arrives, at about 11× normal speed for 4 Mbit/s video. This project uses that for playback above 1×, reading past the unwanted part to start mid-clip.
 - A clip's video can run a few seconds longer than its listed times, such as 18.8 seconds for a clip listed as 16.
+- Downloads of consecutive clips can be fed into one FFmpeg as one MPEG-PS stream. Their timestamps follow real time across the gaps between clips, and FFmpeg closes those gaps unless told otherwise with `-dts_delta_threshold`.
+- The NVR can drop a long download partway. One 1016 MiB file stopped at about 590 MiB and about 690 MiB on two tries, and another finished in 227 seconds. The cause is unknown.
 
 ## Motion detection
 
