@@ -227,6 +227,8 @@
     // Roughly how much of the next clip has arrived when a jump is noticed.
     const NEW_CLIP_SECONDS = 0.4;
     const QUIET_LIMIT_MS = 2000;
+    const PLAY_RETRIES = 6;
+    const PLAY_RETRY_MS = 500;
     const START_LIMIT_MS = 8000;
     // The search's clip times can be a few seconds off from the video itself, and a request
     // past a clip's real end would get the next clip's video.
@@ -589,10 +591,11 @@
           showMessage(message.message, true);
         }
       };
+      // The NVR plays one recording at a time and can be slow to free up after the last one,
+      // so a stream that never started is worth trying again unless the failure is permanent.
       socket.onclose = () => {
         if (stopped || video) return;
-        if (!failed) showMessage('Could not play this camera', true);
-        onFailed();
+        onFailed(!failed);
       };
       if (!keepFrame) showMessage('Connecting…');
 
@@ -619,15 +622,25 @@
       playFrom(camera, (recordings[index + 1] ?? clip).start);
     }
 
-    function playFrom(camera, seconds, keepFrame = false) {
+    function playFrom(camera, seconds, keepFrame = false, attempt = 0) {
       stopPlayback({ keepFrame });
       videoCamera = camera;
       setTime(seconds);
       playback = {
         camera,
         ...playRecording(camera, Math.floor(seconds), {
-          keepFrame,
-          onFailed: () => stopPlayback({ keepFrame: true }),
+          keepFrame: keepFrame || attempt > 0,
+          onFailed: (canRetry) => {
+            if (canRetry && attempt < PLAY_RETRIES) {
+              playback.retryTimer = setTimeout(() => playFrom(camera, seconds, true, attempt + 1), PLAY_RETRY_MS * (attempt + 1));
+              return;
+            }
+            if (canRetry && !camera.frame.querySelector('video')) {
+              camera.frame.className = 'frame failed';
+              camera.frame.textContent = 'Could not play this camera';
+            }
+            stopPlayback({ keepFrame: true });
+          },
           onQuiet: (position) => resumeAfterQuiet(camera, position),
         }),
       };
@@ -644,6 +657,7 @@
     }
 
     function stopPlayback({ keepFrame = false } = {}) {
+      clearTimeout(playback?.retryTimer);
       playback?.stop();
       playback = null;
       if (!keepFrame && videoCamera) {
