@@ -17,4 +17,5 @@ depend() {
 
 start_pre() {
 	checkpath --file --owner hikvision:hikvision --mode 0640 "$output_log"
+	checkpath --directory --owner hikvision:hikvision --mode 0750 /var/lib/hikvision-viewer
 }

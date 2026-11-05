@@ -1,13 +1,20 @@
 import { readFile } from 'node:fs/promises';
 import http from 'node:http';
+import path from 'node:path';
 import { createCache } from './cache.js';
 import { attachLiveStreams } from './live.js';
 import { createNvrClient, NvrError } from './nvr.js';
 
-const { NVR_URL, NVR_USER, NVR_PASSWORD, NVR_ALLOW_SELF_SIGNED, NVR_RTSP_PORT = '554', HOST = '127.0.0.1', PORT = '3000' } = process.env;
+const { NVR_URL, NVR_USER, NVR_PASSWORD, NVR_ALLOW_SELF_SIGNED, NVR_RTSP_PORT = '554', HOST = '127.0.0.1', PORT = '3000', CACHE_DIR = 'cache', CACHE_YEARS_HOURS = '24' } = process.env;
 
 if (!NVR_URL || !NVR_USER || !NVR_PASSWORD) {
   console.error('Set NVR_URL, NVR_USER and NVR_PASSWORD in .env (see .env.example).');
+  process.exit(1);
+}
+
+const cacheYearsHours = Number(CACHE_YEARS_HOURS);
+if (!CACHE_YEARS_HOURS.trim() || !(cacheYearsHours >= 0)) {
+  console.error('Set CACHE_YEARS_HOURS in .env to a number of hours, or 0 to turn that cache off.');
   process.exit(1);
 }
 
@@ -20,9 +27,12 @@ const nvr = createNvrClient({
 });
 
 const YEARS_BACK = 10;
-const YEAR_CACHE_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
 
-const queryCache = createCache();
+const queryCache = createCache({
+  file: path.join(CACHE_DIR, 'query-cache.json'),
+  lifetimesMs: { recordingYear: cacheYearsHours * HOUR_MS },
+});
 
 const pages = new Map([
   ['/', new URL('../public/index.html', import.meta.url)],
@@ -40,7 +50,7 @@ async function yearsWithRecordings(cameraIds) {
   const years = [];
   // Sequential so a wrong password costs one failed login, not one per year.
   for (let year = lastYear - YEARS_BACK; year <= lastYear; year++) {
-    const hasRecordings = await queryCache.get(`recording-year:${year}:${key}`, YEAR_CACHE_MS, () => nvr.yearHasRecordings(cameraIds, year));
+    const hasRecordings = await queryCache.get('recordingYear', `${year}:${key}`, () => nvr.yearHasRecordings(cameraIds, year));
     if (hasRecordings) years.push(year);
   }
   return years;
@@ -51,7 +61,7 @@ async function handle(req, res) {
 
   // DELETE rather than POST because browsers won't let another website send one here.
   if (req.method === 'DELETE' && pathname === '/api/cache') {
-    queryCache.clear();
+    await queryCache.clear();
     res.writeHead(204);
     return res.end();
   }

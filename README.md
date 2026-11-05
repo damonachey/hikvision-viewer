@@ -48,11 +48,13 @@ Settings live in `.env`, which git ignores. Restart the app after changing them.
 | `NVR_ALLOW_SELF_SIGNED` | No | `false` | Set to `true` if `NVR_URL` is `https` and the NVR uses a self-signed certificate |
 | `HOST` | No | `127.0.0.1` | Address the app listens on |
 | `PORT` | No | `3000` | Port the app listens on (`.env.example` sets `9999`) |
+| `CACHE_DIR` | No | `cache` | Folder for remembered NVR answers, which the app must be able to write to |
+| `CACHE_YEARS_HOURS` | No | `24` | How long to remember which years have video. `0` turns this cache off. |
 
 ## Using the Live page
 
 - The links at the top of the page switch between **Live** and **Recordings**. The **Recordings** page can't play video yet. Its year row shows the last 10 years, brighter for years with video from the ticked cameras, and its gear button keeps a separate list of cameras from this page's.
-- The server remembers each year's answer for 24 hours to spare the NVR, so new video can take that long to show. **Clear cached queries** under the **Recordings** page's gear button asks the NVR again. Restarting the app also clears them.
+- The server saves each year's answer in `query-cache.json` in `CACHE_DIR` to spare the NVR, including across restarts. New video can take as long as `CACHE_YEARS_HOURS` to show. **Clear cached queries** under the **Recordings** page's gear button asks the NVR again.
 - The gear button lets you tick which cameras to show. Hidden cameras aren't requested from the NVR, and new cameras appear by default.
 - **Refresh** gets new snapshots from every shown camera.
 - The list next to **Refresh** sets the auto refresh, which repeats that every 1, 5, 30 or 60 seconds. A refresh is skipped if the last one is still loading, the tab is in the background or a full-size view is open.
@@ -97,7 +99,7 @@ These steps run the app on Alpine Linux, such as in a Proxmox LXC container. The
    npm ci --omit=dev
    ```
 
-2. Create a user to run it, and its config. Set `HOST=0.0.0.0` in `.env` so other machines can connect, and read the Security section first:
+2. Create a user to run it, and its config. Set `HOST=0.0.0.0` in `.env` so other machines can connect, and read the Security section first. Also set `CACHE_DIR=/var/lib/hikvision-viewer`, which the service creates, because the service user can't write to the install folder:
 
    ```sh
    addgroup -S hikvision
@@ -124,7 +126,7 @@ To update it, run `git pull` and `npm ci --omit=dev` in `/opt/hikvision-viewer`,
 |---|---|
 | `GET /api/cameras` | JSON list of the cameras, each with `id`, `name` and `online` |
 | `GET /api/cameras/:id/snapshot` | The camera's current image at the NVR's default size. Add `?full=1` for the highest resolution the NVR offers. |
-| `GET /api/recordings/years?cameras=1,2` | JSON list of the years, from the last 10, with main-stream video from any of those cameras. Sends the NVR one search per year, and remembers each answer for 24 hours. |
+| `GET /api/recordings/years?cameras=1,2` | JSON list of the years, from the last 10, with main-stream video from any of those cameras. Sends the NVR one search per year, and remembers each answer for `CACHE_YEARS_HOURS`. |
 | `DELETE /api/cache` | Forgets the remembered NVR answers |
 | WebSocket `/api/cameras/:id/live?stream=main` or `sub` | The camera's stream as fragmented MP4, after a JSON message with its codec. Only same-origin pages can connect, and the server allows 16 streams at once. It pings every 15 seconds and ends a stream whose viewer stops answering. |
 
@@ -134,7 +136,7 @@ To update it, run `git pull` and `npm ci --omit=dev` in `/opt/hikvision-viewer`,
 |---|---|
 | `src/nvr.js` | NVR client: digest auth, camera list and snapshots |
 | `src/live.js` | Live video: runs FFmpeg and sends its output over WebSockets |
-| `src/cache.js` | Remembers NVR answers for a set time |
+| `src/cache.js` | Saves NVR answers to a JSON file, for a set time per type of data |
 | `src/server.js` | Config, routes and the web server |
 | `public/index.html` | The Live page: the camera grid |
 | `public/recordings.html` | The Recordings page |
