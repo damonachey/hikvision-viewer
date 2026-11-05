@@ -63,15 +63,17 @@ export function createCache({ file, lifetimesMs }) {
       const running = loading.get(id);
       if (running) return running;
 
+      const started = performance.now();
       const loaded = load().then((value) => {
         // Clearing the cache during a load also discards that load's answer.
         if (loading.get(id) !== loaded) return value;
         loading.delete(id);
+        const requestMs = Math.round(performance.now() - started);
         const now = Date.now();
         for (const [otherId, other] of entries) {
           if (!isFresh(other, now)) entries.delete(otherId);
         }
-        entries.set(id, { type, savedAt: now, value });
+        entries.set(id, { type, savedAt: now, requestMs, value });
         save();
         return value;
       }, (err) => {
