@@ -124,7 +124,7 @@ These steps run the app on Alpine Linux, such as in a Proxmox LXC container. The
    rc-service hikvision-viewer start
    ```
 
-To update it, run `git pull` and `npm ci --omit=dev` in `/opt/hikvision-viewer`, then `rc-service hikvision-viewer restart`. Logs are in `/var/log/hikvision-viewer.log`.
+To update it, run `sh deploy/update.sh` as root in `/opt/hikvision-viewer`. It gets the latest code, updates the service file, sets `CACHE_DIR` if it's missing, and restarts the service. Logs are in `/var/log/hikvision-viewer.log`.
 
 ## API
 
@@ -156,6 +156,7 @@ To update it, run `git pull` and `npm ci --omit=dev` in `/opt/hikvision-viewer`,
 | `public/index.html` | The Live page: the camera grid |
 | `public/recordings.html` | The Recordings page |
 | `deploy/hikvision-viewer.openrc` | Service file for Alpine Linux |
+| `deploy/update.sh` | Updates an Alpine install to the latest code |
 | `ISAPI.md` | Notes on the NVR's API |
 
 ## License
