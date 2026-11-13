@@ -196,6 +196,13 @@ async function handle(req, res) {
     return sendJson(res, 200, thumbnails.start(Number(year), Number(month), Number(day)));
   }
 
+  if (req.method === 'PUT' && pathname === '/api/nvr/reboot') {
+    await nvr.reboot();
+    console.log('Asked the NVR to reboot');
+    res.writeHead(204);
+    return res.end();
+  }
+
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
 
   if (pathname === '/api/cache') return sendJson(res, 200, await cacheInfo());

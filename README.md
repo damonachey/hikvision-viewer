@@ -65,6 +65,7 @@ Settings live in `.env`, which git ignores. Settings with a default are commente
 - The links at the top of each page switch between **Live** and **Recordings**.
 - The camera button lets you tick which cameras to show. Hidden cameras aren't requested from the NVR, and new cameras appear by default.
 - The gear button next to it has **Clear cached queries**, **Clear cached thumbnails** and **Cache info**, the same as on the **Recordings** page.
+- **Reboot NVR**, under the gear button on either page, restarts the NVR after you confirm. Nothing is recorded while it restarts, and snapshots can fail for 10 minutes or more afterwards.
 - **Refresh** gets new snapshots from every shown camera.
 - The list next to **Refresh** sets the auto refresh, which repeats that every 1, 5, 30 or 60 seconds. A refresh is skipped if the last one is still loading, the tab is in the background or a full-size view is open.
 - Setting that list to **Live** plays every shown camera's sub-stream in its tile and disables **Refresh**. Sub-streams are low resolution. The video stops while the tab is in the background.
@@ -165,6 +166,7 @@ To update it, run `sh deploy/update.sh` as root in `/opt/hikvision-viewer`. It g
 | `DELETE /api/recordings/thumbnails` | Stops any build and deletes every thumbnail |
 | `GET /api/cache` | JSON with the size of the cached queries, each day's thumbnails and the free disk space |
 | `DELETE /api/cache` | Forgets the remembered NVR answers |
+| `PUT /api/nvr/reboot` | Reboots the NVR |
 | WebSocket `/api/cameras/:id/live?stream=main` or `sub` | The camera's stream as fragmented MP4, after a JSON message with its codec. Only same-origin pages can connect, and the server allows 16 streams at once. It pings every 15 seconds and ends a stream whose viewer stops answering. |
 
 ## Project layout

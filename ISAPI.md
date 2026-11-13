@@ -171,6 +171,7 @@ These change the NVR or its recordings. They're listed so they aren't mistaken f
 - `PUT` or `POST /ISAPI/ContentMgmt/record/tracks` changes recording schedules
 - `POST /ISAPI/ContentMgmt/record/control/manual/start/tracks/<id>` and `.../stop/...` control recording
 - `/ISAPI/ContentMgmt/InputProxy/channels/<id>/reboot` reboots a camera
+- `PUT /ISAPI/System/reboot` reboots the NVR. **Reboot NVR** under the gear button uses it.
 
 ## Links
 

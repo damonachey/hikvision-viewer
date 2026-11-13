@@ -133,6 +133,8 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
       if (body) {
         headers['Content-Type'] = 'application/xml';
         headers['Content-Length'] = Buffer.byteLength(body);
+      } else if (method !== 'GET') {
+        headers['Content-Length'] = 0;
       }
       const req = transport.request(
         target,
@@ -157,10 +159,9 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
     });
   }
 
-  async function authedRequest(path, body) {
+  async function authedRequest(path, body, method = body ? 'POST' : 'GET') {
     if (credentialsRejected) throw new NvrError(CREDENTIALS_MESSAGE, 503);
 
-    const method = body ? 'POST' : 'GET';
     try {
       let res = await send(method, path, body);
       if (res.status === 401) {
@@ -234,6 +235,11 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
   return {
     credentialsRejected: () => credentialsRejected,
     openDownload,
+    // The NVR answers before it restarts, then can't be reached for a minute or two.
+    async reboot() {
+      await withSlot(() => authedRequest('/ISAPI/System/reboot', null, 'PUT'));
+    },
+
     rejectCredentials() {
       credentialsRejected = true;
     },
