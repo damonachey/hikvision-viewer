@@ -25,13 +25,17 @@
     .menu-panel button { width: 100%; padding: 6px; border: 0; border-radius: 6px; background: none; color: var(--text); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
     .menu-panel hr { margin: 6px 0; border: 0; border-top: 1px solid var(--line); }
     .menu-panel .danger:not(:disabled) { color: var(--bad); }
-    #reboot-dialog { width: min(400px, calc(100vw - 32px)); padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
-    #reboot-dialog::backdrop { background: rgba(0, 0, 0, .7); }
-    #reboot-dialog h2 { margin: 0 0 8px; font-size: 16px; }
-    #reboot-dialog p { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
-    #reboot-dialog form { display: flex; justify-content: flex-end; gap: 8px; }
-    #reboot-dialog button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
-    #reboot-dialog .danger { border-color: var(--bad); color: var(--bad); }
+    .dialog { width: min(400px, calc(100vw - 32px)); padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
+    .dialog::backdrop { background: rgba(0, 0, 0, .7); }
+    .dialog h2 { margin: 0 0 8px; font-size: 16px; }
+    .dialog p { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
+    .dialog form { display: flex; justify-content: flex-end; gap: 8px; }
+    .dialog button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; cursor: pointer; }
+    #about-details { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; margin: 0 0 16px; font-size: 14px; }
+    #about-details dt { color: var(--muted); }
+    #about-details dd { margin: 0; overflow-wrap: anywhere; }
+    #about-details a { color: var(--text); }
+    .dialog .danger { border-color: var(--bad); color: var(--bad); }
     .menu-panel button:hover:not(:disabled) { background: var(--line); }
     .menu-panel button:disabled { color: var(--muted); opacity: 1; cursor: default; }
     #cache-dialog { width: min(440px, calc(100vw - 32px)); padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
@@ -111,6 +115,8 @@
         <button id="cache-info" type="button">Cache info</button>
         <hr>
         <button id="reboot-nvr" class="danger" type="button">Reboot NVR</button>
+        <hr>
+        <button id="about" type="button">About</button>
       </div>
     </details>
   </header>
@@ -155,7 +161,18 @@
     </div>
     <div id="full-frame" class="frame"></div>
   </dialog>
-  <dialog id="reboot-dialog" aria-labelledby="reboot-title" aria-describedby="reboot-text">
+  <dialog id="about-dialog" class="dialog" aria-labelledby="about-title">
+    <h2 id="about-title">Hikvision Camera Viewer</h2>
+    <dl id="about-details">
+      <dt>Version</dt><dd id="about-version">Loading…</dd>
+      <dt>Author</dt><dd id="about-author"></dd>
+      <dt>Source</dt><dd><a id="about-link" target="_blank" rel="noopener"></a></dd>
+    </dl>
+    <form method="dialog">
+      <button autofocus>Close</button>
+    </form>
+  </dialog>
+  <dialog id="reboot-dialog" class="dialog" aria-labelledby="reboot-title" aria-describedby="reboot-text">
     <h2 id="reboot-title">Reboot the NVR?</h2>
     <p id="reboot-text">Nothing is recorded and video stops for a few minutes while it restarts. Snapshots can keep failing for 10 minutes or more after that.</p>
     <form method="dialog">
@@ -182,6 +199,7 @@
     const cacheDialog = document.getElementById('cache-dialog');
     const rebootDialog = document.getElementById('reboot-dialog');
     const rebootButton = document.getElementById('reboot-nvr');
+    const aboutDialog = document.getElementById('about-dialog');
     const fullView = document.getElementById('full-view');
     const fullFrame = document.getElementById('full-frame');
     const fullInterval = document.getElementById('full-interval');
@@ -754,9 +772,26 @@
       }, messageMs);
     }
 
+    async function showAbout() {
+      const version = document.getElementById('about-version');
+      aboutDialog.showModal();
+      try {
+        const res = await fetch('/api/about');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        version.textContent = data.version;
+        document.getElementById('about-author').textContent = data.author;
+        const link = document.getElementById('about-link');
+        link.href = data.homepage;
+        link.textContent = data.homepage.replace(/^https?:\/\//, '');
+      } catch (err) {
+        version.textContent = err.message;
+      }
+    }
+
     // A click outside a menu closes it, except while a dialog it opened is showing.
     document.addEventListener('click', (event) => {
-      if (cacheDialog.open || rebootDialog.open) return;
+      if (cacheDialog.open || rebootDialog.open || aboutDialog.open) return;
       for (const menu of document.querySelectorAll('details.menu')) {
         if (!menu.contains(event.target)) menu.open = false;
       }
@@ -765,6 +800,10 @@
     document.getElementById('clear-thumbnails').addEventListener('click', (event) => clearCached(event.currentTarget, '/api/recordings/thumbnails'));
     document.getElementById('cache-info').addEventListener('click', showCacheInfo);
     rebootButton.addEventListener('click', confirmReboot);
+    document.getElementById('about').addEventListener('click', showAbout);
+    aboutDialog.addEventListener('click', (event) => {
+      if (event.target === event.currentTarget) aboutDialog.close();
+    });
     rebootDialog.addEventListener('close', rebootNvr);
     rebootDialog.addEventListener('click', (event) => {
       if (event.target === event.currentTarget) rebootDialog.close();

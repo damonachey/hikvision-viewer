@@ -6,6 +6,8 @@ import { createNvrClient, NvrError } from './nvr.js';
 import { createThumbnailBuilder } from './thumbnails.js';
 import { attachVideoStreams, sendRecordingFile, sendRecordingRange } from './video.js';
 
+const packageInfo = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+
 const { NVR_URL, NVR_USER, NVR_PASSWORD, NVR_ALLOW_SELF_SIGNED, NVR_RTSP_PORT = '554', HOST = '127.0.0.1', PORT = '3000', CACHE_DIR = 'cache', CACHE_YEARS_HOURS = '24', CACHE_MONTHS_HOURS = '24', CACHE_DAYS_HOURS = '24', CACHE_RECORDINGS_HOURS = '24', CACHE_TODAY_MINUTES = '5' } = process.env;
 
 if (!NVR_URL || !NVR_USER || !NVR_PASSWORD) {
@@ -206,6 +208,10 @@ async function handle(req, res) {
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
 
   if (pathname === '/api/cache') return sendJson(res, 200, await cacheInfo());
+  if (pathname === '/api/about') {
+    const { version, author, homepage } = packageInfo;
+    return sendJson(res, 200, { version, author, homepage });
+  }
 
   if (pathname === '/api/recordings/thumbnails') {
     const cameras = searchParams.get('cameras') ?? '';
@@ -315,5 +321,5 @@ const server = http.createServer((req, res) => {
 attachVideoStreams(server, nvr);
 
 server.listen(Number(PORT), HOST, () => {
-  console.log(`Camera viewer running at http://${HOST}:${PORT}`);
+  console.log(`Camera viewer ${packageInfo.version} running at http://${HOST}:${PORT}`);
 });
