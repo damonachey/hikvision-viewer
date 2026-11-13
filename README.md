@@ -63,7 +63,8 @@ Settings live in `.env`, which git ignores. Settings with a default are commente
 ## Using the Live page
 
 - The links at the top of each page switch between **Live** and **Recordings**.
-- The gear button lets you tick which cameras to show. Hidden cameras aren't requested from the NVR, and new cameras appear by default.
+- The camera button lets you tick which cameras to show. Hidden cameras aren't requested from the NVR, and new cameras appear by default.
+- The gear button next to it has **Clear cached queries**, **Clear cached thumbnails** and **Cache info**, the same as on the **Recordings** page.
 - **Refresh** gets new snapshots from every shown camera.
 - The list next to **Refresh** sets the auto refresh, which repeats that every 1, 5, 30 or 60 seconds. A refresh is skipped if the last one is still loading, the tab is in the background or a full-size view is open.
 - Setting that list to **Live** plays every shown camera's sub-stream in its tile and disables **Refresh**. Sub-streams are low resolution. The video stops while the tab is in the background.
@@ -77,7 +78,7 @@ Settings live in `.env`, which git ignores. Settings with a default are commente
 ## Using the Recordings page
 
 - The rows show the last 10 years, then the selected year's months, then the selected month's days, all brighter where the ticked cameras have video. Under them, each ticked camera has a band showing when it recorded that day, with one bar across all the bands that you drag to pick a time. The clip under the bar, or else the next one after it, is green, and each tile shows a thumbnail for it, or black if there's none.
-- Opening a day makes 480×270 thumbnails, one at a time, by downloading just the start of each file. A clip gets its own unless it starts less than five minutes after the last clip that did, in which case it shares that one. Each camera's first and last come first, then the gaps are split in half repeatedly, with the cameras taking turns, so the whole day fills in gradually. Until a day is finished, a tile shows the nearest thumbnail so far. They're kept in `thumbnails` in `CACHE_DIR`, aren't removed by **Clear cached queries**, and are never deleted automatically. **Clear cached thumbnails** under the gear button deletes all of them, and the day being viewed then starts building again. **Cache info** there shows how much space the cache is using.
+- Opening a day makes 480×270 thumbnails, one at a time, by downloading just the start of each file. A clip gets its own unless it starts less than five minutes after the last clip that did, in which case it shares that one. Each camera's first and last come first, then the gaps are split in half repeatedly, with the cameras taking turns, so the whole day fills in gradually. Until a day is finished, a tile shows the nearest thumbnail so far. They're kept in `thumbnails` in `CACHE_DIR`, aren't removed by **Clear cached queries**, and are never deleted automatically. **Clear cached thumbnails** under the gear button, on either page, deletes all of them, and the day being viewed then starts building again. **Cache info** there shows how much space the cache is using.
 - Move the mouse over a tile and click its play button to play that camera in a popup. It works when the camera's band has a green clip. It plays from the bar if the bar is inside that clip, or else from the start of the next clip, then carries on through that camera's later clips. The popup has its own play and pause button, and the bar follows the video, so it stays where you stopped when you close the popup.
 - The pop-out button under a tile, or the one in the popup, plays that camera in its own window instead. Press Esc to close the window.
 - The popup and the window both have a speed menu, from 0.5× to 8×, and a progress bar for the current clip. Click or drag the bar to move within the clip.
@@ -86,7 +87,7 @@ Settings live in `.env`, which git ignores. Settings with a default are commente
 - A browser extension that controls video speed can override the speed menu.
 - The download button in the popup and the window asks for a start time, which defaults to the current position, and a length in minutes or seconds. It saves all the video in that range as one MP4, at the camera's full recorded resolution and without audio. Time between clips is left out, so the file can be shorter than the length you asked for, and a range stops at midnight.
 - A saved range's start and end can be a few seconds off, because clips' listed times aren't exact and a file has to begin at a keyframe. Ranges don't need the NVR's playback slot, so they can run during playback. A range starting late in a long clip takes longer, because the whole clip has to be read up to that point. Your browser can't show a percentage because the final size isn't known in advance.
-- The gear button keeps its own list of cameras, separate from the **Live** page's, and each browser remembers it. Thumbnails are made for every camera, ticked or not, so ticking one later shows its thumbnails straight away.
+- The camera button keeps its own list of cameras, separate from the **Live** page's, and each browser remembers it. Thumbnails are made for every camera, ticked or not, so ticking one later shows its thumbnails straight away.
 - The server saves each answer in `query-cache.json` in `CACHE_DIR` to spare the NVR, including across restarts. New video can take as long as the matching `CACHE_` setting to show. **Clear cached queries** under the gear button asks the NVR again.
 
 ## Security
@@ -103,7 +104,7 @@ Settings live in `.env`, which git ignores. Settings with a default are commente
 | `EADDRINUSE` when starting | Another app is using that port, so change `PORT` |
 | "The NVR rejected the username or password" | Fix `.env` and restart. The NVR may also have locked the account, so wait for the lock to clear first. |
 | "Could not reach the NVR" | Check `NVR_URL` and that this machine can reach the NVR |
-| Cameras are missing | Check the list under the gear button. Only IP camera channels are listed, so analog channels on a hybrid recorder won't appear. |
+| Cameras are missing | Check the list under the camera button. Only IP camera channels are listed, so analog channels on a hybrid recorder won't appear. |
 | "Camera offline" or "Snapshot failed" | Check the camera's status on the NVR and that the account is allowed to view it. After the NVR reboots, snapshots can fail for 10 minutes or more, then recover by themselves. |
 | "FFmpeg is not installed on the server" | Install FFmpeg, make sure it's on your `PATH`, and restart the app |
 | Live view stays on "Reconnecting…" | Check that RTSP is enabled on the NVR, that `NVR_RTSP_PORT` is right, and that your firewall allows UDP video to reach FFmpeg. The server log has the reason. |

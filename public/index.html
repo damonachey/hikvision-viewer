@@ -20,7 +20,24 @@
     select { padding: 8px; }
     summary { display: flex; align-items: center; justify-content: center; width: 39px; height: 39px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); cursor: pointer; list-style: none; }
     summary::-webkit-details-marker { display: none; }
-    #camera-list { position: absolute; top: 100%; right: 0; z-index: 1; width: 240px; max-width: 100%; max-height: 60vh; margin-top: 4px; padding: 6px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+    .menu { position: relative; }
+    .menu-panel { position: absolute; top: 100%; right: 0; z-index: 1; width: 240px; max-width: calc(100vw - 32px); max-height: 60vh; margin-top: 4px; padding: 6px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+    .menu-panel button { width: 100%; padding: 6px; border: 0; border-radius: 6px; background: none; color: var(--text); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+    .menu-panel button:hover:not(:disabled) { background: var(--line); }
+    .menu-panel button:disabled { color: var(--muted); opacity: 1; cursor: default; }
+    #cache-dialog { width: min(440px, calc(100vw - 32px)); padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
+    #cache-dialog::backdrop { background: rgba(0, 0, 0, .7); }
+    #cache-dialog h2 { margin: 0 0 12px; font-size: 16px; }
+    #cache-dialog table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    #cache-dialog th, #cache-dialog td { padding: 4px 0; font-weight: 400; text-align: right; }
+    #cache-dialog th:first-child, #cache-dialog td:first-child { text-align: left; }
+    #cache-dialog thead th { color: var(--muted); font-size: 12px; }
+    #cache-summary { margin: 0 0 12px; font-size: 14px; }
+    #cache-summary div { display: flex; justify-content: space-between; padding: 2px 0; }
+    #cache-summary .total { font-weight: 600; }
+    #cache-days-title { margin: 0 0 4px; color: var(--muted); font-size: 13px; }
+    #cache-days { max-height: 50vh; overflow-y: auto; }
+    #cache-close { display: block; margin: 12px 0 0 auto; }
     #camera-list label { display: flex; align-items: center; gap: 8px; padding: 6px; color: var(--text); font-size: 14px; cursor: pointer; }
     #camera-list .offline { margin-left: auto; color: var(--muted); font-size: 12px; }
     #error { margin-bottom: 16px; color: var(--bad); }
@@ -63,14 +80,27 @@
       <option value="0" selected>Off</option>
     </select>
     <button id="refresh" type="button">Refresh</button>
-    <details id="camera-menu">
+    <details id="camera-menu" class="menu">
       <summary aria-label="Choose cameras" title="Choose cameras">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/>
+          <rect x="2" y="6" width="14" height="12" rx="2"/>
+        </svg>
+      </summary>
+      <div id="camera-list" class="menu-panel"></div>
+    </details>
+    <details id="settings-menu" class="menu">
+      <summary aria-label="Settings" title="Settings">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
           <circle cx="12" cy="12" r="3"/>
         </svg>
       </summary>
-      <div id="camera-list"></div>
+      <div class="menu-panel">
+        <button id="clear-cache" type="button">Clear cached queries</button>
+        <button id="clear-thumbnails" type="button">Clear cached thumbnails</button>
+        <button id="cache-info" type="button">Cache info</button>
+      </div>
     </details>
   </header>
   <div id="error" hidden></div>
@@ -114,6 +144,13 @@
     </div>
     <div id="full-frame" class="frame"></div>
   </dialog>
+  <dialog id="cache-dialog" aria-labelledby="cache-title">
+    <h2 id="cache-title">Cache info</h2>
+    <div id="cache-summary"></div>
+    <p id="cache-days-title">Thumbnails by day</p>
+    <div id="cache-days"></div>
+    <button id="cache-close" type="button">Close</button>
+  </dialog>
 
   <script>
     const grid = document.getElementById('grid');
@@ -122,8 +159,8 @@
     const refreshButton = document.getElementById('refresh');
     const intervalSelect = document.getElementById('interval');
     const template = document.getElementById('camera-template');
-    const cameraMenu = document.getElementById('camera-menu');
     const cameraList = document.getElementById('camera-list');
+    const cacheDialog = document.getElementById('cache-dialog');
     const fullView = document.getElementById('full-view');
     const fullFrame = document.getElementById('full-frame');
     const fullInterval = document.getElementById('full-interval');
@@ -133,6 +170,7 @@
     const HIDDEN_KEY = 'hiddenCameras';
     const MIN_RETRY_MS = 1000;
     const MAX_RETRY_MS = 30000;
+    const CLEARED_MESSAGE_MS = 2000;
     // Allows for short network hiccups before skipping ahead to the newest video.
     const MAX_LAG_SECONDS = 3;
     // Removing video also removes frames up to the next keyframe, and keyframes can be
@@ -584,8 +622,102 @@
       }, seconds * 1000);
     }
 
+    // Nothing on this page uses the cache, so clearing it needs no reload here.
+    async function clearCached(button, url) {
+      const label = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Clearing…';
+      try {
+        const res = await fetch(url, { method: 'DELETE' });
+        if (!res.ok) throw new Error((await res.json()).error);
+        button.textContent = 'Cleared';
+        setTimeout(() => {
+          button.textContent = label;
+          button.disabled = false;
+        }, CLEARED_MESSAGE_MS);
+      } catch (err) {
+        errorBox.textContent = err.message;
+        errorBox.hidden = false;
+        button.textContent = label;
+        button.disabled = false;
+      }
+    }
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+      if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+      return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+    }
+
+    function summaryRow(label, value, className = '') {
+      const row = document.createElement('div');
+      row.className = className;
+      const name = document.createElement('span');
+      name.textContent = label;
+      const amount = document.createElement('span');
+      amount.textContent = value;
+      row.append(name, amount);
+      return row;
+    }
+
+    function tableRow(cells, tag) {
+      const row = document.createElement('tr');
+      row.append(...cells.map((text) => {
+        const cell = document.createElement(tag);
+        cell.textContent = text;
+        return cell;
+      }));
+      return row;
+    }
+
+    async function showCacheInfo() {
+      const summary = document.getElementById('cache-summary');
+      const list = document.getElementById('cache-days');
+      summary.replaceChildren(summaryRow('Loading…', ''));
+      list.replaceChildren();
+      cacheDialog.showModal();
+      try {
+        const res = await fetch('/api/cache');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        const files = data.days.reduce((total, day) => total + day.files, 0);
+        const bytes = data.days.reduce((total, day) => total + day.bytes, 0);
+        summary.replaceChildren(
+          summaryRow('Total', formatBytes(data.queryBytes + bytes), 'total'),
+          summaryRow('Thumbnails', `${files.toLocaleString()} files, ${formatBytes(bytes)}`),
+          summaryRow('Cached queries', formatBytes(data.queryBytes)),
+          summaryRow('Free disk space', data.diskFreeBytes === null ? 'Unknown' : `${formatBytes(data.diskFreeBytes)} of ${formatBytes(data.diskTotalBytes)}`),
+        );
+        if (!data.days.length) {
+          list.textContent = 'None';
+          return;
+        }
+        const table = document.createElement('table');
+        const head = document.createElement('thead');
+        head.append(tableRow(['Day', 'Files', 'Size'], 'th'));
+        const body = document.createElement('tbody');
+        body.append(...data.days.map(({ date, files: dayFiles, bytes: dayBytes }) => tableRow([date, dayFiles.toLocaleString(), formatBytes(dayBytes)], 'td')));
+        table.append(head, body);
+        list.replaceChildren(table);
+      } catch (err) {
+        summary.replaceChildren(summaryRow(err.message, ''));
+      }
+    }
+
+    // A click outside a menu closes it, except while the cache info it opened is showing.
     document.addEventListener('click', (event) => {
-      if (!cameraMenu.contains(event.target)) cameraMenu.open = false;
+      if (cacheDialog.open) return;
+      for (const menu of document.querySelectorAll('details.menu')) {
+        if (!menu.contains(event.target)) menu.open = false;
+      }
+    });
+    document.getElementById('clear-cache').addEventListener('click', (event) => clearCached(event.currentTarget, '/api/cache'));
+    document.getElementById('clear-thumbnails').addEventListener('click', (event) => clearCached(event.currentTarget, '/api/recordings/thumbnails'));
+    document.getElementById('cache-info').addEventListener('click', showCacheInfo);
+    document.getElementById('cache-close').addEventListener('click', () => cacheDialog.close());
+    cacheDialog.addEventListener('click', (event) => {
+      if (event.target === event.currentTarget) cacheDialog.close();
     });
     document.addEventListener('visibilitychange', () => {
       if (fullCamera) startFullView();
