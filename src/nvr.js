@@ -20,6 +20,14 @@ export class NvrError extends Error {
   }
 }
 
+// The reason an NVR gives in an ISAPI ResponseStatus error, such as " (Device Error, deviceError)".
+function errorDetail(body) {
+  const text = body.toString('utf8');
+  const field = (name) => text.match(new RegExp(`<${name}>([^<]*)</${name}>`))?.[1].trim();
+  const parts = [field('statusString'), field('subStatusCode')].filter(Boolean);
+  return parts.length ? ` (${parts.join(', ')})` : '';
+}
+
 function parseChallenge(header) {
   // Multiple WWW-Authenticate headers arrive joined with commas.
   const challenges = (header ?? '').split(/,\s*(?=(?:Digest|Basic)\s)/i);
@@ -165,7 +173,9 @@ export function createNvrClient({ url, user, password, allowSelfSigned = false, 
           throw new NvrError(CREDENTIALS_MESSAGE, 503);
         }
       }
-      if (res.status !== 200) throw new NvrError(`The NVR returned HTTP ${res.status} for ${path}`);
+      if (res.status !== 200) {
+        throw new NvrError(`The NVR returned HTTP ${res.status} for ${path}${errorDetail(res.body)}`);
+      }
       return res;
     } catch (err) {
       if (err instanceof NvrError) throw err;
